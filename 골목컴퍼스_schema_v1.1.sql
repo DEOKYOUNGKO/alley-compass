@@ -1,0 +1,743 @@
+-- =========================================================
+-- 골목 컴퍼스 (Alley Compass)
+-- Supabase / PostgreSQL Schema v1.1
+--
+-- v1.1 변경사항:
+--   - 접근 제어 전략을 명시적으로 문서화
+--   - anon 역할에 대한 개인 세션 테이블 접근을 명시적으로 revoke
+--     (기존에도 grant가 없어 결과적으로 막혀 있었으나, 의도를 코드로 명확히 함)
+-- =========================================================
+
+
+-- =========================================================
+-- 1. DISTRICTS
+-- 서울 골목상권 기본 정보
+-- =========================================================
+create table public.districts (
+    id bigint generated always as identity primary key,
+
+    district_code varchar(30) not null unique,
+    district_name varchar(100) not null,
+    gu_name varchar(50),
+
+    latitude double precision,
+    longitude double precision,
+
+    created_at timestamptz not null default now()
+);
+
+
+-- =========================================================
+-- 2. BUSINESS_TYPES
+-- 업종 마스터
+-- =========================================================
+create table public.business_types (
+    id bigint generated always as identity primary key,
+
+    business_code varchar(30) not null unique,
+    business_name varchar(100) not null,
+    category varchar(100),
+
+    created_at timestamptz not null default now()
+);
+
+
+-- =========================================================
+-- 3. DISTRICT_FEATURES
+-- 상권 × 업종 × 시점 Feature Table
+-- Pandas 전처리 결과 저장
+-- =========================================================
+create table public.district_features (
+    id bigint generated always as identity primary key,
+
+    district_id bigint not null
+        references public.districts(id)
+        on delete cascade,
+
+    business_type_id bigint not null
+        references public.business_types(id)
+        on delete cascade,
+
+    reference_date date not null,
+
+    -- 유동인구
+    foot_traffic double precision,
+    foot_traffic_20 double precision,
+    foot_traffic_30 double precision,
+
+    -- 배후인구
+    resident_population double precision,
+    worker_population double precision,
+
+    -- 점포
+    store_count integer,
+    opening_rate double precision,
+    closure_rate double precision,
+
+    -- 매출
+    estimated_sales double precision,
+    sales_growth_rate double precision,
+
+    -- 경쟁
+    competition_density double precision,
+
+    -- 시설 / 접근성
+    facility_count integer,
+    transit_score double precision,
+
+    -- 확장 Feature
+    extra_features jsonb not null default '{}'::jsonb,
+
+    -- 데이터셋별 기준시점
+    -- 예:
+    -- {
+    --   "foot_traffic": "2024-06",
+    --   "sales": "2024-Q2",
+    --   "stores": "2024",
+    --   "worker_population": "2024-H1"
+    -- }
+    source_dates jsonb not null default '{}'::jsonb,
+
+    created_at timestamptz not null default now(),
+
+    constraint uq_district_feature
+        unique (
+            district_id,
+            business_type_id,
+            reference_date
+        )
+);
+
+
+-- =========================================================
+-- 4. MODEL_VERSIONS
+-- LightGBM 모델 버전 및 평가 지표
+-- =========================================================
+create table public.model_versions (
+    id bigint generated always as identity primary key,
+
+    model_name varchar(100) not null default 'LightGBM',
+    version varchar(50) not null unique,
+
+    target_name varchar(100),
+
+    roc_auc double precision,
+    pr_auc double precision,
+    brier_score double precision,
+    calibration_error double precision,
+
+    train_start_date date,
+    train_end_date date,
+    validation_start_date date,
+    validation_end_date date,
+
+    feature_names jsonb not null default '[]'::jsonb,
+    model_metadata jsonb not null default '{}'::jsonb,
+
+    created_at timestamptz not null default now()
+);
+
+
+-- =========================================================
+-- 5. PREDICTIONS
+-- 모델이 계산한 상권 × 업종 안정성 예측
+-- =========================================================
+create table public.predictions (
+    id bigint generated always as identity primary key,
+
+    feature_id bigint not null
+        references public.district_features(id)
+        on delete cascade,
+
+    model_version_id bigint not null
+        references public.model_versions(id)
+        on delete cascade,
+
+    -- 모델 raw probability
+    risk_probability double precision
+        check (
+            risk_probability is null
+            or risk_probability between 0 and 1
+        ),
+
+    -- UI용 안정성 Score: 0~100
+    stability_score double precision
+        check (
+            stability_score is null
+            or stability_score between 0 and 100
+        ),
+
+    confidence_score double precision
+        check (
+            confidence_score is null
+            or confidence_score between 0 and 100
+        ),
+
+    predicted_at timestamptz not null default now(),
+
+    constraint uq_prediction
+        unique (feature_id, model_version_id)
+);
+
+
+-- =========================================================
+-- 6. SEARCH_SESSIONS
+-- 사용자가 입력한 창업 조건
+--
+-- user_id는 nullable:
+-- 로그인 없는 MVP 사용자도 FastAPI를 통해 사용할 수 있음
+--
+-- [접근 전략 - MVP]
+-- 이 테이블 이하(search_sessions, recommendation_runs,
+-- recommendations, agent_analyses, verification_claims)는
+-- 개인 세션 데이터이므로 anon/authenticated의 직접 접근을
+-- 허용하지 않는다. 모든 쓰기/읽기는 FastAPI가 service_role로
+-- 대행하며, 세션 소유권 검증은 애플리케이션 레벨(세션 id를
+-- 쿠키/토큰으로 관리)에서 수행한다. service_role은 RLS를
+-- 우회하므로 아래 정책은 service_role 요청에는 영향을 주지
+-- 않는다.
+--
+-- 아래 "to authenticated" 정책은 향후 실제 로그인 기능을
+-- 도입해 프론트가 Supabase Auth 세션으로 직접 조회하는
+-- 경로를 열 때 그대로 사용하기 위해 남겨둔다. MVP 기간에는
+-- 프론트가 이 경로를 사용하지 않으므로 사실상 비활성 상태다.
+-- =========================================================
+create table public.search_sessions (
+    id uuid primary key default gen_random_uuid(),
+
+    user_id uuid
+        references auth.users(id)
+        on delete set null,
+
+    business_type_id bigint
+        references public.business_types(id)
+        on delete set null,
+
+    budget numeric(14, 2),
+
+    target_age varchar(30),
+    market_character varchar(50),
+    priority varchar(50),
+
+    -- 향후 조건 추가용
+    preferences jsonb not null default '{}'::jsonb,
+
+    created_at timestamptz not null default now()
+);
+
+
+-- =========================================================
+-- 7. RECOMMENDATION_RUNS
+-- 같은 세션에서 조건을 변경할 때마다 새로운 추천 Run 생성
+-- =========================================================
+create table public.recommendation_runs (
+    id uuid primary key default gen_random_uuid(),
+
+    session_id uuid not null
+        references public.search_sessions(id)
+        on delete cascade,
+
+    model_version_id bigint
+        references public.model_versions(id)
+        on delete set null,
+
+    -- 실제 Ranking에 사용된 조건 Snapshot
+    conditions jsonb not null default '{}'::jsonb,
+
+    execution_time_ms integer,
+
+    created_at timestamptz not null default now()
+);
+
+
+-- =========================================================
+-- 8. RECOMMENDATIONS
+-- 각 Run의 최종 Top-K 추천 결과
+-- =========================================================
+create table public.recommendations (
+    id bigint generated always as identity primary key,
+
+    run_id uuid not null
+        references public.recommendation_runs(id)
+        on delete cascade,
+
+    district_id bigint not null
+        references public.districts(id)
+        on delete cascade,
+
+    rank integer not null
+        check (rank > 0),
+
+    -- ML 기반 생존 안정성
+    stability_score double precision
+        check (
+            stability_score is null
+            or stability_score between 0 and 100
+        ),
+
+    -- 예산 / 타깃 / 선호조건 등을 합친 최종 Ranking Score
+    final_score double precision
+        check (
+            final_score is null
+            or final_score between 0 and 100
+        ),
+
+    budget_fit boolean,
+
+    target_fit_score double precision
+        check (
+            target_fit_score is null
+            or target_fit_score between 0 and 100
+        ),
+
+    -- Ranking에 사용된 세부 점수
+    score_breakdown jsonb not null default '{}'::jsonb,
+
+    created_at timestamptz not null default now(),
+
+    constraint uq_run_rank
+        unique (run_id, rank),
+
+    constraint uq_run_district
+        unique (run_id, district_id)
+);
+
+
+-- =========================================================
+-- 9. AGENT_ANALYSES
+--
+-- Recommendation Agent
+-- Risk Agent
+-- Verification Agent 관련 결과 저장
+-- =========================================================
+create table public.agent_analyses (
+    id bigint generated always as identity primary key,
+
+    recommendation_id bigint not null
+        references public.recommendations(id)
+        on delete cascade,
+
+    agent_type varchar(30) not null
+        check (
+            agent_type in (
+                'recommendation',
+                'risk',
+                'verification'
+            )
+        ),
+
+    content text not null,
+
+    -- Claude가 구조화된 결과를 반환할 경우 저장
+    structured_output jsonb not null default '{}'::jsonb,
+
+    model_name varchar(100),
+
+    created_at timestamptz not null default now()
+);
+
+
+-- =========================================================
+-- 10. VERIFICATION_CLAIMS
+--
+-- Verification Agent가 추출한 개별 Claim과
+-- Tool 계산 결과 기록
+-- =========================================================
+create table public.verification_claims (
+    id bigint generated always as identity primary key,
+
+    analysis_id bigint not null
+        references public.agent_analyses(id)
+        on delete cascade,
+
+    claim_text text not null,
+
+    metric varchar(100),
+
+    -- 예:
+    -- percentile
+    -- trend
+    -- raw_value
+    -- budget
+    -- competition
+    verification_type varchar(50),
+
+    claimed_value double precision,
+    actual_value double precision,
+
+    -- 숫자로 표현하기 어려운 값 대응
+    claimed_text varchar(255),
+    actual_text varchar(255),
+
+    tolerance double precision,
+
+    verified boolean not null default false,
+
+    verification_tool varchar(100),
+    verification_reason text,
+
+    created_at timestamptz not null default now()
+);
+
+
+
+-- =========================================================
+-- INDEX
+-- =========================================================
+
+create index idx_districts_code
+on public.districts(district_code);
+
+create index idx_business_types_code
+on public.business_types(business_code);
+
+
+create index idx_features_district
+on public.district_features(district_id);
+
+create index idx_features_business
+on public.district_features(business_type_id);
+
+create index idx_features_reference_date
+on public.district_features(reference_date);
+
+create index idx_features_district_business
+on public.district_features(
+    district_id,
+    business_type_id
+);
+
+
+create index idx_predictions_feature
+on public.predictions(feature_id);
+
+create index idx_predictions_model
+on public.predictions(model_version_id);
+
+create index idx_predictions_stability
+on public.predictions(stability_score desc);
+
+
+create index idx_search_sessions_user
+on public.search_sessions(user_id);
+
+create index idx_search_sessions_created
+on public.search_sessions(created_at desc);
+
+
+create index idx_runs_session
+on public.recommendation_runs(session_id);
+
+create index idx_runs_created
+on public.recommendation_runs(created_at desc);
+
+
+create index idx_recommendations_run
+on public.recommendations(run_id);
+
+create index idx_recommendations_district
+on public.recommendations(district_id);
+
+create index idx_recommendations_rank
+on public.recommendations(run_id, rank);
+
+
+create index idx_agent_recommendation
+on public.agent_analyses(recommendation_id);
+
+create index idx_agent_type
+on public.agent_analyses(agent_type);
+
+
+create index idx_verification_analysis
+on public.verification_claims(analysis_id);
+
+create index idx_verification_verified
+on public.verification_claims(verified);
+
+
+
+-- =========================================================
+-- ROW LEVEL SECURITY
+-- =========================================================
+
+alter table public.districts
+enable row level security;
+
+alter table public.business_types
+enable row level security;
+
+alter table public.district_features
+enable row level security;
+
+alter table public.model_versions
+enable row level security;
+
+alter table public.predictions
+enable row level security;
+
+alter table public.search_sessions
+enable row level security;
+
+alter table public.recommendation_runs
+enable row level security;
+
+alter table public.recommendations
+enable row level security;
+
+alter table public.agent_analyses
+enable row level security;
+
+alter table public.verification_claims
+enable row level security;
+
+
+
+-- =========================================================
+-- PUBLIC DATA READ POLICIES
+--
+-- 상권 / 업종 / Feature / 모델 / Prediction은
+-- 공개 데이터로 사용. anon 포함 누구나 직접 조회 가능
+-- (프론트가 지도/상권 정보를 FastAPI 경유 없이 바로
+-- 렌더링할 수 있도록 허용)
+-- =========================================================
+
+create policy "Public can read districts"
+on public.districts
+for select
+to anon, authenticated
+using (true);
+
+
+create policy "Public can read business types"
+on public.business_types
+for select
+to anon, authenticated
+using (true);
+
+
+create policy "Public can read district features"
+on public.district_features
+for select
+to anon, authenticated
+using (true);
+
+
+create policy "Public can read model versions"
+on public.model_versions
+for select
+to anon, authenticated
+using (true);
+
+
+create policy "Public can read predictions"
+on public.predictions
+for select
+to anon, authenticated
+using (true);
+
+
+
+-- =========================================================
+-- SEARCH SESSION POLICIES
+--
+-- [MVP 기간] 아래 정책은 authenticated 역할에만 적용되며,
+-- MVP는 로그인을 요구하지 않으므로 실제로는 거의 트리거되지
+-- 않는다. 모든 실질적인 접근은 FastAPI가 service_role로
+-- 수행한다(RLS 우회). 이 정책들은 향후 로그인 기능 도입 시
+-- 프론트-Supabase 직접 연동 경로를 열기 위해 미리 준비해
+-- 두는 것이다.
+-- =========================================================
+
+create policy "Users can read own search sessions"
+on public.search_sessions
+for select
+to authenticated
+using (
+    auth.uid() = user_id
+);
+
+
+create policy "Users can create own search sessions"
+on public.search_sessions
+for insert
+to authenticated
+with check (
+    auth.uid() = user_id
+);
+
+
+create policy "Users can update own search sessions"
+on public.search_sessions
+for update
+to authenticated
+using (
+    auth.uid() = user_id
+)
+with check (
+    auth.uid() = user_id
+);
+
+
+create policy "Users can delete own search sessions"
+on public.search_sessions
+for delete
+to authenticated
+using (
+    auth.uid() = user_id
+);
+
+
+
+-- =========================================================
+-- RECOMMENDATION RUN READ POLICY (MVP 기간 사실상 비활성 — 위와 동일한 이유)
+-- 본인 Session에 연결된 Run만 조회
+-- =========================================================
+
+create policy "Users can read own recommendation runs"
+on public.recommendation_runs
+for select
+to authenticated
+using (
+    exists (
+        select 1
+        from public.search_sessions s
+        where s.id = recommendation_runs.session_id
+          and s.user_id = auth.uid()
+    )
+);
+
+
+
+-- =========================================================
+-- RECOMMENDATIONS READ POLICY (MVP 기간 사실상 비활성 — 위와 동일한 이유)
+-- =========================================================
+
+create policy "Users can read own recommendations"
+on public.recommendations
+for select
+to authenticated
+using (
+    exists (
+        select 1
+        from public.recommendation_runs rr
+        join public.search_sessions s
+          on s.id = rr.session_id
+        where rr.id = recommendations.run_id
+          and s.user_id = auth.uid()
+    )
+);
+
+
+
+-- =========================================================
+-- AGENT ANALYSIS READ POLICY (MVP 기간 사실상 비활성 — 위와 동일한 이유)
+-- =========================================================
+
+create policy "Users can read own agent analyses"
+on public.agent_analyses
+for select
+to authenticated
+using (
+    exists (
+        select 1
+        from public.recommendations r
+        join public.recommendation_runs rr
+          on rr.id = r.run_id
+        join public.search_sessions s
+          on s.id = rr.session_id
+        where r.id = agent_analyses.recommendation_id
+          and s.user_id = auth.uid()
+    )
+);
+
+
+
+-- =========================================================
+-- VERIFICATION CLAIM READ POLICY (MVP 기간 사실상 비활성 — 위와 동일한 이유)
+-- =========================================================
+
+create policy "Users can read own verification claims"
+on public.verification_claims
+for select
+to authenticated
+using (
+    exists (
+        select 1
+        from public.agent_analyses aa
+        join public.recommendations r
+          on r.id = aa.recommendation_id
+        join public.recommendation_runs rr
+          on rr.id = r.run_id
+        join public.search_sessions s
+          on s.id = rr.session_id
+        where aa.id = verification_claims.analysis_id
+          and s.user_id = auth.uid()
+    )
+);
+
+
+
+-- =========================================================
+-- DATA API PERMISSIONS
+-- Automatically expose new tables를 꺼둔 경우를 대비
+-- =========================================================
+
+grant usage on schema public
+to anon, authenticated;
+
+
+-- 공개 데이터
+grant select
+on public.districts,
+   public.business_types,
+   public.district_features,
+   public.model_versions,
+   public.predictions
+to anon, authenticated;
+
+
+-- 사용자 검색 Session
+-- MVP 기간에는 FastAPI(service_role)만 실제로 사용하며,
+-- 아래 grant는 향후 로그인 기능 도입 시를 위해 authenticated에만 부여한다.
+grant select, insert, update, delete
+on public.search_sessions
+to authenticated;
+
+
+-- 결과 데이터
+-- 쓰기는 FastAPI(service_role)가 수행하고
+-- 사용자는 읽기만 수행 (마찬가지로 향후 로그인 기능용)
+grant select
+on public.recommendation_runs,
+   public.recommendations,
+   public.agent_analyses,
+   public.verification_claims
+to authenticated;
+
+
+-- Identity Column 사용에 필요한 Sequence 권한
+grant usage, select
+on all sequences in schema public
+to authenticated;
+
+
+-- =========================================================
+-- anon 역할의 개인 세션 데이터 접근을 명시적으로 차단
+-- (기존에도 grant가 없어 결과적으로 막혀 있었으나,
+--  "MVP에서 anon은 이 테이블들에 절대 직접 접근하지 않는다"는
+--  설계 의도를 코드로 명확히 하기 위해 명시적으로 revoke)
+-- =========================================================
+
+revoke all
+on public.search_sessions,
+   public.recommendation_runs,
+   public.recommendations,
+   public.agent_analyses,
+   public.verification_claims
+from anon;
+
+
+-- =========================================================
+-- 완료
+-- =========================================================
