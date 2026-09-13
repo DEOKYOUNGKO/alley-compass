@@ -368,18 +368,43 @@ def trend(
 # Tool 4 — Competition Density Tool
 # ---------------------------------------------------------------------
 
+DEMAND_COLUMNS = ["foot_traffic", "resident_population", "worker_population"]
+
+
+def _demand_series(frame: pd.DataFrame) -> tuple[pd.Series | None, list[str]]:
+    """배후수요 = 유동인구 + 상주인구 + 직장인구.
+
+    일부 컬럼이 없거나 비어 있으면 있는 것만 더하고, 실제로 사용한 컬럼을
+    함께 돌려준다 — 어떤 값으로 계산했는지 결과에 남기기 위해서다.
+    """
+    present = [c for c in DEMAND_COLUMNS if c in frame.columns]
+    if not present:
+        return None, []
+    demand = frame[present].fillna(0).sum(axis=1)
+    if not (demand > 0).any():
+        return None, []
+    return demand, present
+
+
 def competition_density(
     df: pd.DataFrame,
     district_code: str,
     business_code: str,
     reference_date: str | None = None,
 ) -> dict[str, Any]:
-    """업종별 점포 밀도를 서울 평균과 비교한다. (PRD §11 Competition Density Tool)
+    """업종별 경쟁강도를 서울 평균과 비교한다. (PRD §11 Competition Density Tool)
 
-    주의: 5종 데이터셋에 상권 면적이 없어 '점포수/면적' 밀도를 만들 수
-    없다(README 참고). 실제 면적이 붙기 전까지는 store_count를
-    경쟁강도 프록시로 쓰고, 그 사실을 결과에 명시한다 — 없는 데이터를
-    있는 것처럼 보고하지 않기 위해서다.
+    5종 데이터셋에 상권 면적이 없어 '점포수/면적' 밀도는 만들 수 없다. 대신
+    면적이 필요 없는 정의를 쓴다.
+
+        점포당 배후수요 = (유동인구 + 상주인구 + 직장인구) / 동종업종 점포수
+
+    값이 클수록 점포 하나가 나눠 갖는 수요가 커서 경쟁이 여유롭다. 없는
+    데이터(면적)를 지어내지 않고 가진 데이터만으로 계산하는 방식이며,
+    웹 프론트(web/src/lib/scoring.js)도 같은 정의를 쓴다.
+
+    배후수요 컬럼이 전부 비어 있으면 점포수 기준 비교로 물러서고, 어느 기준으로
+    판정했는지를 basis 필드에 남긴다.
     """
     scope = df[df["business_code"] == str(business_code)].copy()
     as_of = reference_date or _latest_reference_date(
@@ -388,27 +413,70 @@ def competition_density(
     if as_of is None:
         raise ToolError(f"업종 {business_code} 의 store_count 데이터가 없습니다.")
     scope = scope[scope["reference_date"] == as_of].dropna(subset=["store_count"])
+    scope = scope[scope["store_count"] > 0]
 
     if str(district_code) not in set(scope["district_code"]):
         raise ToolError(f"상권_코드 {district_code} 는 {as_of} 시점 비교 대상에 없습니다.")
 
-    district_value = float(
-        scope.loc[scope["district_code"] == str(district_code), "store_count"].iloc[0]
-    )
-    citywide_avg = float(scope["store_count"].mean())
-    citywide_median = float(scope["store_count"].median())
+    is_target = scope["district_code"] == str(district_code)
+    district_stores = float(scope.loc[is_target, "store_count"].iloc[0])
+    citywide_avg_stores = float(scope["store_count"].mean())
 
-    return {
+    result: dict[str, Any] = {
         "district_code": district_code,
         "business_code": business_code,
         "as_of": as_of,
-        "district_store_count": district_value,
-        "citywide_avg_store_count": round(citywide_avg, 2),
-        "citywide_median_store_count": citywide_median,
-        "ratio_to_avg": None if citywide_avg == 0 else round(district_value / citywide_avg, 2),
+        "district_store_count": district_stores,
+        "citywide_avg_store_count": round(citywide_avg_stores, 2),
+        "citywide_median_store_count": float(scope["store_count"].median()),
+        "store_count_ratio_to_avg": (
+            None if citywide_avg_stores == 0 else round(district_stores / citywide_avg_stores, 2)
+        ),
         "n_districts": len(scope),
-        "note": "면적 데이터 없음 — 점포수 기준 프록시 (실제 밀도 아님)",
     }
+
+    demand, used_columns = _demand_series(scope)
+
+    if demand is None:
+        result.update({
+            "basis": "store_count",
+            "demand_columns_used": [],
+            "district_demand": None,
+            "district_demand_per_store": None,
+            "citywide_avg_demand_per_store": None,
+            # 이 경우에만 점포수 비율이 판정 기준이 된다 (값이 클수록 과밀)
+            "ratio_to_avg": result["store_count_ratio_to_avg"],
+            "note": (
+                "배후수요(유동·상주·직장) 컬럼이 비어 있어 점포수 기준으로만 "
+                "비교했습니다. 값이 클수록 점포가 많다는 뜻이며, 수요 대비 "
+                "경쟁강도는 아닙니다."
+            ),
+        })
+        return result
+
+    per_store = demand / scope["store_count"]
+    district_per_store = float(per_store.loc[is_target].iloc[0])
+    citywide_avg_per_store = float(per_store.mean())
+
+    result.update({
+        "basis": "demand_per_store",
+        "demand_columns_used": used_columns,
+        "district_demand": round(float(demand.loc[is_target].iloc[0]), 2),
+        "district_demand_per_store": round(district_per_store, 2),
+        "citywide_avg_demand_per_store": round(citywide_avg_per_store, 2),
+        # 값이 클수록 점포당 수요가 커서 경쟁이 여유롭다 (점포수 비율과 방향이 반대다)
+        "ratio_to_avg": (
+            None
+            if citywide_avg_per_store == 0
+            else round(district_per_store / citywide_avg_per_store, 2)
+        ),
+        "note": (
+            "상권 면적 미보유 — '점포수/면적' 밀도 대신 수요 대비 공급"
+            f"(배후수요/점포수, 사용 컬럼 {'+'.join(used_columns)})으로 "
+            "계산했습니다. 값이 클수록 경쟁이 여유롭습니다."
+        ),
+    })
+    return result
 
 
 # ---------------------------------------------------------------------
@@ -702,9 +770,15 @@ def _demo(df: pd.DataFrame, business_code: str | None, district_code: str | None
 
     log("")
     comp = competition_density(df, district_code, business_code)
-    log(f"[Competition Density Tool] 이 상권 점포수={comp['district_store_count']:.0f}개, "
-        f"서울 평균={comp['citywide_avg_store_count']:.1f}개 "
-        f"(비율 {comp['ratio_to_avg']}) — {comp['note']}")
+    if comp["basis"] == "demand_per_store":
+        log(f"[Competition Density Tool] 점포 {comp['district_store_count']:.0f}개 · "
+            f"점포당 배후수요={comp['district_demand_per_store']:,.1f} "
+            f"(서울 평균 {comp['citywide_avg_demand_per_store']:,.1f}, "
+            f"비율 {comp['ratio_to_avg']}) — {comp['note']}")
+    else:
+        log(f"[Competition Density Tool] 이 상권 점포수={comp['district_store_count']:.0f}개, "
+            f"서울 평균={comp['citywide_avg_store_count']:.1f}개 "
+            f"(비율 {comp['ratio_to_avg']}) — {comp['note']}")
 
     log("")
     tr = trend(df, district_code, "estimated_sales", business_code, periods=4)
