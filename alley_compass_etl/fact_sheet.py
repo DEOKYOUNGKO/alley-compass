@@ -101,7 +101,24 @@ def build_fact_sheet(
 
     try:
         c = competition_density(df, district_code, business_code)
-        add("competition_ratio", "동종업종 점포수 / 서울 평균", c["ratio_to_avg"], "배", 0.15)
+        if c["basis"] == "demand_per_store":
+            # 값이 클수록 점포당 배후수요가 커서 경쟁이 여유롭다(점포수 비율과 반대 방향).
+            add(
+                "competition_ratio",
+                "점포당 배후수요(유동+상주+직장) / 서울 평균 — 클수록 경쟁 여유",
+                c["ratio_to_avg"],
+                "배",
+                0.15,
+            )
+        else:
+            # 배후수요 컬럼이 없어 점포수 기준으로 물러선 경우 — 값이 클수록 점포가 많다(경쟁 심함).
+            add(
+                "competition_ratio",
+                "동종업종 점포수 / 서울 평균 — 클수록 경쟁 심함",
+                c["ratio_to_avg"],
+                "배",
+                0.15,
+            )
     except ToolError:
         pass
 
