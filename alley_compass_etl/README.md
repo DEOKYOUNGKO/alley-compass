@@ -127,7 +127,14 @@ Recommendation/Risk/Verification 에이전트 체인을 붙일 때 그대로 쓰
 **Budget Validator에 대한 주의**: 5종 공식 데이터셋에는 보증금/임대료가
 없다. 그래서 이 Tool은 "추정 보증금과 예산 비교의 산술이 맞는가"만
 검증하고, 추정 보증금 자체가 데이터로 검증된 값이 아니라는 사실을
-결과의 `note`에 항상 남긴다.
+결과의 `note`에 항상 남긴다. 실측을 붙이려면 부동산원 상업용 부동산
+임대조사를 상권_코드에 매핑하는 단계가 선행되어야 한다.
+
+**Competition Density Tool의 판정 기준**: 면적이 없으므로 `점포당 배후수요`
+(= (유동+상주+직장) / 점포수)로 비교한다. `ratio_to_avg`는 이 값의 서울 평균
+대비 비율이며 **클수록 경쟁이 여유롭다** — 점포수 비율과 방향이 반대다.
+배후수요 컬럼이 전부 비어 있으면 점포수 기준으로 물러서고, 어느 쪽으로
+판정했는지는 결과의 `basis` 필드(`demand_per_store` / `store_count`)에 남는다.
 
 ---
 
@@ -175,8 +182,21 @@ LightGBM 생존 안정성 Score는 아직 없어 Fact Sheet에 포함되어 있�
 
 ### `competition_density`
 
-현재 PRD의 5종 데이터에는 상권 면적이 없으므로 `점포수/면적` 같은 실제 밀도를 만들 수 없습니다.
-따라서 가짜 밀도를 생성하지 않고 NULL로 둡니다. 현재 경쟁 feature는 `store_count`를 사용합니다.
+5종 데이터에는 상권 면적이 없으므로 `점포수/면적` 같은 실제 밀도를 만들 수 없습니다.
+따라서 이 컬럼(면적 기반 밀도를 뜻함)은 가짜 값을 넣지 않고 NULL로 둡니다.
+
+대신 면적이 필요 없는 경쟁강도를 `extra_features`에 파생해 넣습니다.
+
+```
+backing_demand   = 유동인구 + 상주인구 + 직장인구
+demand_per_store = backing_demand / store_count
+```
+
+값이 클수록 점포 하나가 나눠 갖는 수요가 커서 경쟁이 여유롭다는 뜻입니다.
+`store_count`가 0이면 나누지 않고 NULL로 둡니다.
+
+`verification_tools.competition_density()`와 웹 프론트(`web/src/lib/scoring.js`)가
+같은 정의를 사용하므로, 화면에 보이는 경쟁강도와 검증 Tool의 판정 기준이 일치합니다.
 
 ### `districts.gu_name`, `latitude`, `longitude`
 

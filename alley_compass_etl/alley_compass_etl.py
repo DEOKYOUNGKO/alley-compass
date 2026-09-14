@@ -717,8 +717,23 @@ def build_feature_table(
 
     base["reference_date"] = base["quarter"].map(quarter_start_date)
 
-    # 상권 면적 데이터가 없으므로 경쟁 "밀도"를 임의로 만들지 않음.
+    # 상권 면적 데이터가 없으므로 "점포수/면적" 밀도는 여전히 만들지 않는다.
     base["competition_density"] = np.nan
+
+    # 대신 면적이 필요 없는 경쟁강도를 파생한다.
+    #   점포당 배후수요 = (유동인구 + 상주인구 + 직장인구) / 동종업종 점포수
+    # 값이 클수록 점포 하나가 나눠 갖는 수요가 커서 경쟁이 여유롭다.
+    # competition_density 컬럼은 "면적 기반 밀도"를 뜻하므로 여기 넣지 않고
+    # extra_features 로 보낸다. verification_tools.competition_density() 와
+    # 웹 프론트(web/src/lib/scoring.js)가 같은 정의를 쓴다.
+    demand_total = (
+        base["foot_traffic"].fillna(0)
+        + base["resident_population"].fillna(0)
+        + base["worker_population"].fillna(0)
+    )
+    stores = base["store_count"].where(base["store_count"] > 0)
+    base["backing_demand"] = demand_total.where(demand_total > 0)
+    base["demand_per_store"] = base["backing_demand"] / stores
 
     # source_dates:
     # 각 값이 실제로 존재하는 경우에만 해당 분기를 기록.
@@ -927,6 +942,8 @@ def build_feature_records(
         "theater_count",
         "supermarket_count",
         "transit_raw",
+        "backing_demand",
+        "demand_per_store",
     ]
 
     for row in base.to_dict(orient="records"):
