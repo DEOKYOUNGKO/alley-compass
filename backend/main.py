@@ -65,19 +65,20 @@ app = FastAPI(
     description="서울 골목상권을 조건 기반으로 탐색·랭킹·검증하는 백엔드 (PRD §19)",
     version="0.1.0",
 )
-# 로그인 이후로는 Authorization 헤더가 오간다. 출처를 명시적으로 제한한다 —
-# 기본값을 "*" 로 두면 배포할 때 그대로 나가기 쉽다.
+# 로그인 이후로는 Authorization 헤더가 오간다. 허용 출처는 항상 명시한 주소뿐이다 —
+# "*" 나 포트 와일드카드를 두면 배포 환경에 그대로 나가기 쉽다.
 #
-# CORS_ORIGINS 를 지정하면(배포) 그 주소만 허용한다. 지정하지 않으면(로컬 개발)
-# localhost 의 모든 포트를 허용한다 — Vite 는 5173 이 사용 중이면 5174… 로
-# 넘어가는데, 그때마다 사전 요청(OPTIONS)이 400 으로 막혀 화면이 비었다.
-CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
-LOCAL_DEV_ORIGIN_REGEX = r"http://(localhost|127\.0\.0\.1)(:\d+)?"
+#   배포       CORS_ORIGINS 에 실제 웹 주소를 적는다 (쉼표로 여러 개)
+#   로컬 개발  기본값 http://localhost:5173 하나. Vite 는 strictPort 로 이 포트에만 뜨고,
+#              Supabase·Google·카카오에 등록한 주소도 이것 하나다.
+DEFAULT_CORS_ORIGINS = "http://localhost:5173"
+CORS_ORIGINS = [
+    o.strip() for o in os.getenv("CORS_ORIGINS", DEFAULT_CORS_ORIGINS).split(",") if o.strip()
+]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
-    allow_origin_regex=None if CORS_ORIGINS else LOCAL_DEV_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["GET", "POST"],
     allow_headers=["Authorization", "Content-Type"],
