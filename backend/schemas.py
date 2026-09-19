@@ -71,3 +71,70 @@ class AgentResponse(BaseModel):
     facts: dict[str, dict]
     recommendation: list[VerifiedClaimOut]
     risk: list[VerifiedClaimOut]
+
+
+# ── 상세 지표 (GET /districts/{code}/detail) ────────────────────
+# 프론트의 상권 진단·차트가 쓰는 값. 전부 backend/detail.py 가 결정론적으로
+# 집계한다 — 백분위 정의를 verification_tools.percentile() 하나로 유지하기
+# 위해서다. Claude 를 부르지 않으므로 과금되지 않는다.
+
+
+class DiagnosticRow(BaseModel):
+    label: str
+    value: str
+    """서울 골목상권 내 상위 %. 비교 대상이 없으면 None."""
+    top: Optional[float] = None
+    """데이터로 검증되지 않은 외부 추정치인가"""
+    unverified: bool = False
+
+
+class DiagnosticArea(BaseModel):
+    key: Literal["customers", "competition", "environment", "cost"]
+    label: str
+    caption: str
+    """False 면 score/top_pct 가 None 이다 — 없는 데이터에 점수를 만들지 않는다."""
+    available: bool
+    score: Optional[int] = None
+    top_pct: Optional[float] = None
+    rows: list[DiagnosticRow]
+    note: Optional[str] = None
+
+
+class SeriesPoint(BaseModel):
+    label: str
+    value: float
+
+
+class Series(BaseModel):
+    available: bool
+    """available=False 인 이유. 화면에 그대로 표시한다."""
+    reason: Optional[str] = None
+    points: list[SeriesPoint] = Field(default_factory=list)
+
+
+class CompetitionChart(BaseModel):
+    district_value: float
+    city_avg: float
+    store_count: int
+    n_districts: int
+    ratio_to_avg: Optional[float] = None
+
+
+class DetailSeries(BaseModel):
+    hourly: Series
+    sales: Series
+    closure: Series
+    competition: Optional[CompetitionChart] = None
+
+
+class DetailResponse(BaseModel):
+    district_code: str
+    district_name: str
+    business_code: str
+    business_name: str
+    as_of: str
+    """이 상권×업종에 실제로 수집된 분기 수. 1이면 추세 계열이 전부 비어 있다."""
+    quarters_collected: int
+    diagnostics: list[DiagnosticArea]
+    series: DetailSeries
+    metrics_available: list[str]
