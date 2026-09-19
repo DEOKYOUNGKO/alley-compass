@@ -67,15 +67,17 @@ app = FastAPI(
 )
 # 로그인 이후로는 Authorization 헤더가 오간다. 출처를 명시적으로 제한한다 —
 # 기본값을 "*" 로 두면 배포할 때 그대로 나가기 쉽다.
-CORS_ORIGINS = [
-    o.strip()
-    for o in os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",")
-    if o.strip()
-]
+#
+# CORS_ORIGINS 를 지정하면(배포) 그 주소만 허용한다. 지정하지 않으면(로컬 개발)
+# localhost 의 모든 포트를 허용한다 — Vite 는 5173 이 사용 중이면 5174… 로
+# 넘어가는데, 그때마다 사전 요청(OPTIONS)이 400 으로 막혀 화면이 비었다.
+CORS_ORIGINS = [o.strip() for o in os.getenv("CORS_ORIGINS", "").split(",") if o.strip()]
+LOCAL_DEV_ORIGIN_REGEX = r"http://(localhost|127\.0\.0\.1)(:\d+)?"
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS,
+    allow_origin_regex=None if CORS_ORIGINS else LOCAL_DEV_ORIGIN_REGEX,
     allow_credentials=True,
     allow_methods=["GET", "POST"],
     allow_headers=["Authorization", "Content-Type"],
