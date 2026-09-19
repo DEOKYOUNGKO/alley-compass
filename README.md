@@ -26,13 +26,15 @@
 | 데이터 수집 파이프라인 (ETL) | ✅ 동작 | [`alley_compass_etl/`](alley_compass_etl/) |
 | 검증 Tool 6종 | ✅ 동작 (LLM 미사용, 결정론적) | [`alley_compass_etl/verification_tools.py`](alley_compass_etl/verification_tools.py) |
 | Claude 에이전트 3종 | ✅ 동작 (Sonnet 5, 라이브 검증 완료) | [`alley_compass_etl/narrative_agents.py`](alley_compass_etl/narrative_agents.py), [`fact_sheet.py`](alley_compass_etl/fact_sheet.py), [`pipeline.py`](alley_compass_etl/pipeline.py) |
-| 웹 프론트 | ✅ `backend/`에 연결됨 — 상권·업종·랭킹은 실제 데이터, 추천/반대 근거는 버튼으로 실제 Claude 호출 | [`web/`](web/) |
-| FastAPI 백엔드 | ✅ 동작 (`/rank`, `/districts/{code}/agents`), **랭킹 점수는 아직 휴리스틱** | [`backend/`](backend/) |
+| 웹 프론트 | ✅ `backend/`에 연결됨 · 로그인 필수(Supabase Auth: 이메일 · Google · 카카오) · React 19 + TypeScript + Tailwind 4, 자체 디자인 시스템 | [`web/`](web/) |
+| FastAPI 백엔드 | ✅ 동작 (`/rank`, `/districts/{code}/detail`, `/agents`), **랭킹 점수는 아직 휴리스틱** | [`backend/`](backend/) |
 | LightGBM 예측 모델 | ⚠️ 학습 파이프라인 완성, **실제 다분기 데이터로 학습 전** (합성 데이터로 배관만 검증) | [`ml/`](ml/) |
 
-**웹 화면의 상권·업종·랭킹은 이제 실제 데이터다** (`alley_compass_etl.py`로 수집한 만큼만).
-생존 안정성 Score는 LightGBM이 아니라 임시 휴리스틱이고, 지도·상세 시계열 차트는 아직
-없다 — 자세한 건 [`web/README.md`](web/README.md)의 "지금 화면에서 진짜인 것/아직 아닌 것" 표 참고.
+**웹 화면의 숫자는 이제 전부 실제 데이터다** (`alley_compass_etl.py`로 수집한 만큼만).
+순위·상권 진단 4영역·시간대별 유동인구·분기별 매출/폐업률까지 백엔드가 계산해 내려준다.
+다만 생존 안정성 Score는 LightGBM이 아니라 임시 휴리스틱이고, 임차료와 지도는 데이터셋에
+아예 없어 빈칸으로 둔다 — 자세한 건 [`web/README.md`](web/README.md)의 "지금 진짜인 것 /
+아직 아닌 것" 표 참고.
 
 - **Claude 에이전트 3종**: `claude-sonnet-5`로 라이브 검증 완료 —
   `python alley_compass_etl/pipeline.py` 실행 결과 추천 근거 3개·반대 근거
@@ -60,7 +62,8 @@ alley-compass/
 │   ├── PRD.md              제품 요구사항 정의서 v1.1 — 사양의 기준 문서
 │   └── prototype-v0.html   React 이식 전 원본 프로토타입 (디자인 레퍼런스)
 ├── db/
-│   └── schema_v1.1.sql     Supabase/PostgreSQL 스키마 (테이블 10개 + RLS)
+│   └── schema_v1.1.sql     Supabase/PostgreSQL 스키마 (테이블 11개 + RLS)
+│                             끝에 v1.2(service_role) · v1.3(로그인) 패치 섹션
 ├── alley_compass_etl/      서울시 Open API → 전처리 → Supabase 적재 → Agent
 │   ├── alley_compass_etl.py    ETL 파이프라인
 │   ├── verification_tools.py   검증 Tool 6종 (PRD §11)
@@ -69,33 +72,50 @@ alley-compass/
 │   ├── pipeline.py               위 전체를 잇는 CLI (--dry-run 지원)
 │   └── README.md               ETL·Agent 사용법 · 의도적 NULL 설명
 ├── backend/                FastAPI — 위 모듈들을 엔드포인트로 노출
-│   ├── main.py                  /rank, /districts/{code}/agents 등
+│   ├── main.py                  /rank, /districts/{code}/detail, /agents
+│   ├── auth.py                   Supabase 로그인 토큰(JWT) 검증
 │   ├── scoring.py                랭킹 로직 (현재 휴리스틱, LightGBM 대기)
+│   ├── detail.py                 상권 진단 4영역 + 시계열 집계
+│   ├── schemas.py                요청·응답 모델 (web/src/types/api.ts 와 1:1)
+│   ├── scripts/create_user.py    운영자용 계정 생성
 │   └── README.md
 ├── ml/                     LightGBM 생존 안정성 모델 (PRD §14~§15)
 │   ├── labels.py                 Label 정의 (PRD §7.1)
 │   ├── features.py               Feature 목록
 │   ├── train.py                  Temporal Split 학습·평가 (--synthetic 배관 점검)
 │   └── README.md
-└── web/                    React 19 + Vite 프론트엔드
-    ├── src/
-    └── README.md           구조 · 실데이터 연결 절차
+└── web/                    React 19 + TypeScript + Tailwind 4 프론트엔드
+    ├── src/Root.tsx        로그인 관문 · 공개 페이지(/privacy) 분기
+    ├── src/App.tsx         메인 화면 — 조건 state 소유 · API 호출 조립
+    ├── src/components/
+    │   ├── ui/             자체 디자인 시스템 (Radix 기반)
+    │   ├── auth/           로그인 · 가입 · 비밀번호 재설정 · 소셜 버튼 · 계정 메뉴
+    │   ├── detail/         상권 상세 드로어 (진단 · 점수 구성 · AI 근거)
+    │   ├── charts/         시계열 · 경쟁강도 차트
+    │   └── legal/          개인정보처리방침
+    ├── src/lib/            api.ts(백엔드 유일 접점) · supabase.ts · auth.tsx · 포맷
+    ├── src/types/          api.ts(backend/schemas.py 와 1:1) · 도메인 · UI 어휘
+    ├── src/styles/         디자인 토큰 3계층 (재료 → 역할 → Tailwind)
+    └── README.md           구조 · 로그인 · 토큰 추가 방법 · 접근성 규칙
 ```
 
 ---
 
 ## 빠른 시작
 
-### 웹 화면 보기 (준비물 없음)
+### 웹 화면 보기 (백엔드가 필요하다)
 
 ```bash
-cd web
-npm install
-npm run dev        # http://localhost:5173
+# 1) 백엔드 — 수집된 데이터가 있어야 한다
+cd backend && uvicorn main:app --reload --port 8000
+
+# 2) 웹
+cd web && npm install && npm run dev   # http://localhost:5173
 ```
 
-목업 데이터로 즉시 돌아간다. 조건을 바꾸면 랭킹이 재계산되고, 상권 행을 누르면
-진단·근거·검증 로그가 담긴 상세 패널이 열린다.
+조건을 바꾸면 서버가 서울 전체를 다시 랭킹하고, 상권 행을 누르면 진단 4영역과
+시계열이 담긴 상세 패널이 열린다. 추천·반대 근거는 Claude 호출이라 버튼을
+눌러야 생성된다(15~20초, 과금).
 
 ### 데이터 파이프라인 돌리기 (API 키 필요)
 

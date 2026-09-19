@@ -11,10 +11,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 현재 있는 것은 PRD + DB 스키마 + ETL 파이프라인 + 검증 Tool 6종 + Agent 체인
 (Recommendation / Risk / Verification, `alley_compass_etl/narrative_agents.py`) +
 FastAPI 백엔드(`backend/`) + LightGBM 학습 파이프라인(`ml/`) + React 프론트
-(목업 데이터)다.
+(`web/`, 백엔드 실데이터 연결 · Supabase Auth 로그인 필수)다.
 
-- Agent 체인은 결정론적 부분(Fact Sheet)까지는 실데이터로 검증됐지만, Claude
-  API 호출 자체는 계정 크레딧 부족으로 아직 라이브 테스트 전이다.
+- Agent 체인은 `claude-sonnet-5`로 라이브 검증까지 됐다. 다만 표본이 상권 1곳이라
+  재작성률·폐기율 측정이 남았다.
 - `backend/`는 동작하지만 `/rank`는 아직 LightGBM이 아니라 `backend/scoring.py`의
   휴리스틱 Score(`model_version: "heuristic-v0"`)를 쓴다.
 - `ml/train.py`는 Label 정의·Temporal Split·평가지표까지 구현·`--synthetic`으로
@@ -53,21 +53,23 @@ python verification_tools.py --district-code 3120014 --business-code CS100010
 python verification_tools.py --supabase       # 로컬 CSV 대신 Supabase에서 로드
 ```
 
-웹 프론트는 `web/`에 있다 (React 19 + Vite).
+웹 프론트는 `web/`에 있다 (React 19 + TypeScript + Vite + Tailwind 4 + Radix).
+backend가 :8000에 떠 있어야 화면이 동작한다.
 
 ```bash
 npm --prefix web install
-npm --prefix web run dev      # http://localhost:5173
-npm --prefix web run build
+npm --prefix web run dev        # http://localhost:5173
+npm --prefix web run build      # tsc -b && vite build
+npm --prefix web run typecheck  # 타입만 검사
 ```
 
 `docs/prototype-v0.html`은 React로 이식되기 전의 원본 프로토타입이다. 디자인 레퍼런스로
 남겨둔 것이며 앱의 일부가 아니다 — 화면을 고칠 때는 `web/` 쪽만 수정한다.
 
 테스트 프레임워크·린터 설정은 없다. 현재 회귀 확인 수단은 두 Python CLI의 데모 실행,
-ETL이 출력하는 DATA QUALITY REPORT, `npm --prefix web run build`다. 화면 로직을 크게
-건드렸다면 `react-dom/server`의 `renderToString`으로 Drawer를 업종×상권 전 조합 렌더해
-NaN/undefined 노출을 훑는 방법이 빠르다 (임시 스크립트를 만들어 `vite build --ssr`로 돌린 뒤 지운다).
+ETL이 출력하는 DATA QUALITY REPORT, `npm --prefix web run build`(타입 검사 포함)다.
+백엔드 집계를 고쳤다면 합성 프레임을 만들어 `build_detail()`을 직접 호출해보는 편이 빠르다 —
+분기 1개·컬럼 결측·`store_count=0` 같은 경계를 실데이터 없이 훑을 수 있다.
 
 ## 아키텍처
 
@@ -108,25 +110,43 @@ Agent 체인을 붙일 때 이 두 함수가 접합점이다.
 `db/schema_v1.1.sql` — Supabase에 수동 적용하는 단일 스키마 파일(마이그레이션
 도구 없음). 접근 전략: `districts/business_types/district_features/model_versions/
 predictions`는 anon 읽기 공개, 개인 세션 계열 5개 테이블(`search_sessions` 이하)은 anon
-revoke + FastAPI가 service_role로 대행. `authenticated` 정책들은 MVP 기간 사실상
-비활성이며 향후 로그인 도입용으로 남겨둔 것이다.
+revoke + FastAPI가 service_role로 대행. 로그인 사용자(`authenticated`)는 본인 기록
+select만 가능하다 — 쓰기 정책은 v1.3 패치에서 제거했다(FastAPI 우회 방지).
+v1.3은 `profiles`(가입 트리거 `handle_new_user`)도 추가한다. 패치는 파일 끝에
+섹션으로 붙이고, 그 섹션만 따로 실행해도 되게 멱등하게 쓴다.
 
-`web/` — React 프론트. 상세는 `web/README.md`. 요점만:
+`backend/auth.py` — Supabase JWT 검증(`require_user`). 신형 프로젝트는 JWKS(ES256/RS256),
+구형은 `SUPABASE_JWT_SECRET`(HS256). `/health` 외 모든 엔드포인트에 붙어 있고,
+`/rank`는 검증된 `user_id`로 `search_sessions`를 기록한다.
 
-- 데이터는 **전부 목업**이다(`src/data/mockDistricts.js`의 상권 10곳 · 업종 5종). 점수·근거
-  문장·검증 로그도 임시 계산이며 실제 분석 결과가 아니다. 화면의 "프로토타입 · 목업 데이터"
-  배지와 푸터 고지는 실데이터 연결 전까지 지우지 않는다.
-- **교체 지점은 `src/data/dataSource.js` 하나다.** 컴포넌트는 데이터 출처를 모른다.
-- `src/lib/`의 계산 함수는 전역 state를 읽지 않고 `(상권, 조건)`만 받는 순수 함수다 —
-  나중에 백엔드로 옮기기 쉽도록. 조건 state는 `App.jsx`가 단독으로 소유한다.
+`backend/detail.py` — 상세 화면용 집계(진단 4영역 + 시계열). `/rank`·`/agents`와 달리
+Claude를 부르지 않으므로 과금이 없다. 백분위는 `verification_tools.percentile()`을 그대로
+쓴다 — 화면의 "상위 N%"와 검증 Tool의 판정이 어긋나면 안 되기 때문이다. 평면 컬럼(로컬
+디버그 CSV)과 `extra_features` JSONB(Supabase) 양쪽에서 값을 읽는다.
+
+`web/` — React + TypeScript 프론트. 상세는 `web/README.md`. 요점만:
+
+- **프론트는 숫자를 계산하지 않는다.** 점수·백분위·진단은 전부 backend가 내려준 값이다.
+  랭킹 로직이 `backend/scoring.py` 한 곳에만 있어야 화면과 검증 Tool이 어긋나지 않는다.
+- **백엔드 호출은 `src/lib/api.ts` 하나를 지난다.** 컴포넌트가 `fetch`를 직접 쓰지 않는다.
+  `src/types/api.ts`가 `backend/schemas.py`와 1:1로 대응하므로 스키마를 바꾸면 둘 다 고친다.
+- `POST /districts/{code}/agents`는 Claude를 최소 4번 부른다(15~20초, 과금). 자동 호출하지
+  않고 사용자가 버튼을 눌러야 부른다. `verified=false` 문장은 화면에 내보내지 않는다.
+- 디자인 시스템은 `src/components/ui/`다. 화면 코드는 배럴(`@/components/ui`)에서만 가져온다.
+  드롭다운·드로어·슬라이더는 Radix Primitives 위에 토큰만 입혔다 — 접근성 배선을 다시
+  만들지 않는다.
+- 디자인 토큰은 3계층이다: `tokens.primitive.css`(재료) → `tokens.semantic.css`(역할, 라이트·
+  다크 둘 다) → `theme.css`(`@theme inline`으로 Tailwind 등록). 컴포넌트는 역할 토큰만 쓴다.
+  **어떤 토큰도 다크 블록에만 존재해선 안 된다** — 라이트에서 색이 비어 렌더된다.
 - 근거 문장은 HTML 문자열이 아니라 조각 배열(`["점포당 배후수요 ", b("2.9"), " ..."]`)로
-  표현하고 `<Rich/>`로 렌더한다. `dangerouslySetInnerHTML`을 쓰지 않으며, pill처럼 평문이
-  필요한 곳은 `plain(parts)`를 쓴다. Agent가 생성한 문장을 받을 때도 이 형태를 유지한다.
-- `lib/scoring.js`는 LightGBM이 아니라 임시 휴리스틱이고, `lib/reasons.js`·
-  `lib/verification.js`는 각각 Recommendation·Risk Agent와 verification_claims 조회가
-  들어올 자리다. 각 파일 상단 주석에 그 대응이 적혀 있다.
-- `lib/stats.js`의 백분위 정의는 `verification_tools.py`의 `percentile()`과 같아야 한다.
-  화면의 "상위 N%"와 검증 Tool의 판정이 어긋나면 안 되기 때문이다.
+  표현하고 `<Rich/>`로 렌더한다. `dangerouslySetInnerHTML`을 쓰지 않으며, 평문이 필요한
+  곳은 `plain(parts)`를 쓴다.
+- 조건 state는 `App.tsx`가 단독으로 소유한다.
+- 로그인은 `Root.tsx`가 관문이다. `/privacy`만 로그인 없이 열린다(라우터 없음, 경로 분기).
+  Supabase 클라이언트(`lib/supabase.ts`)는 **로그인 전용**이고 데이터 조회에 쓰지 않는다.
+  API 401은 `signOut(사유)`로 로그인 화면에 돌려보낸다.
+- 개인정보처리방침(`components/legal/PrivacyPage.tsx`)은 코드 동작을 서술한다. 수집 항목·
+  파기(`on delete set null`)·Claude 전송 범위를 바꾸면 이 페이지도 고친다.
 
 ## 이 코드베이스의 규칙
 
@@ -137,8 +157,9 @@ revoke + FastAPI가 service_role로 대행. `authenticated` 정책들은 MVP 기
   **점포당 배후수요** `= (유동+상주+직장) / store_count`로 계산한다 — 클수록 경쟁 여유이며,
   점포수 비율과 방향이 반대다. 이 정의는 세 곳이 공유하므로 한쪽만 바꾸면 안 된다:
   ETL의 `extra_features.demand_per_store`, `verification_tools.competition_density()`,
-  `web/src/lib/scoring.js`. 보증금/임대료는 여전히 미보유라 `budget_validator`는
-  `verified_by_data=False`를 반환한다.
+  `backend/scoring.py`의 `_competition_score()`, `backend/detail.py`의 `_competition_frame()`.
+  보증금/임대료는 여전히 미보유라 `budget_validator`는 `verified_by_data=False`를 반환하고,
+  화면의 비용 진단 영역도 항상 `available=false`다.
   `districts.gu_name / latitude / longitude`도 같은 이유로 NULL이다 — 지도 기능은
   "영역-상권" 데이터나 별도 geocoding 단계가 선행되어야 한다.
 - 데이터 부족을 추정으로 메우지 않는다. `trend()`는 분기가 모자라면
