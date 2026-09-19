@@ -1,0 +1,817 @@
+<meta charset="utf-8">
+<title>골목 컴퍼스</title>
+<meta name="description" content="서울 골목상권을 생존 안정성 Score로 랭킹해 첫 창업 입지를 좁혀주는 AI 의사결정 엔진 프로토타입">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,500;0,9..144,600;1,9..144,500&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">
+<style>
+:root{
+  --paper:#F4F3EF; --surface:#FBFAF7; --surface-2:#EDEBE3; --sunk:#E7E4D9;
+  --ink:#1A2430; --ink-2:#414D5C; --muted:#77808C; --line:#DBD8CD;
+  --brand:#1C5D99; --brand-deep:#0E3F6E; --brand-tint:#E4EDF5;
+  --good:#2E7D55; --good-tint:#E3EFE8; --good-ink:#1F5C3D;
+  --risk:#BC5A2E; --risk-tint:#F4E7DE; --risk-ink:#8F4322;
+  --warn:#9C7A1E;
+  --shadow:0 1px 2px rgba(26,36,48,.06), 0 8px 24px -12px rgba(26,36,48,.18);
+  color-scheme:light;
+}
+:root:not([data-theme="light"]){
+  @media (prefers-color-scheme:dark){
+    --paper:#121821; --surface:#1A212B; --surface-2:#232C38; --sunk:#151C25;
+    --ink:#E9ECF1; --ink-2:#B5BEC9; --muted:#8590A0; --line:#333D4A;
+    --brand:#5AA3DA; --brand-deep:#8FC3E8; --brand-tint:#1C3346;
+    --good:#5FB786; --good-tint:#1D3529; --good-ink:#8FD4AC;
+    --risk:#DB8A5F; --risk-tint:#3A2A20; --risk-ink:#E7AC8B;
+    --warn:#D2A64E;
+    --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 30px -14px rgba(0,0,0,.6);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --paper:#121821; --surface:#1A212B; --surface-2:#232C38; --sunk:#151C25;
+  --ink:#E9ECF1; --ink-2:#B5BEC9; --muted:#8590A0; --line:#333D4A;
+  --brand:#5AA3DA; --brand-deep:#8FC3E8; --brand-tint:#1C3346;
+  --good:#5FB786; --good-tint:#1D3529; --good-ink:#8FD4AC;
+  --risk:#DB8A5F; --risk-tint:#3A2A20; --risk-ink:#E7AC8B;
+  --warn:#D2A64E;
+  --shadow:0 1px 2px rgba(0,0,0,.3), 0 10px 30px -14px rgba(0,0,0,.6);
+  color-scheme:dark;
+}
+
+*{box-sizing:border-box}
+body{
+  margin:0; background:var(--paper); color:var(--ink);
+  font-family:'IBM Plex Sans KR','Apple SD Gothic Neo','Malgun Gothic',sans-serif;
+  font-size:14px; line-height:1.55; -webkit-font-smoothing:antialiased;
+}
+.mono{font-family:'IBM Plex Mono','SFMono-Regular',ui-monospace,monospace;font-variant-numeric:tabular-nums}
+.wrap{max-width:1260px; margin:0 auto; padding:0 20px 64px}
+
+/* ---- top bar ---- */
+.topbar{border-bottom:1px solid var(--line); background:var(--surface)}
+.topbar .wrap{padding-top:16px; padding-bottom:0; display:flex; flex-direction:column; gap:14px}
+.brandrow{display:flex; align-items:center; gap:12px}
+.mark{width:30px; height:30px; flex:none; color:var(--brand)}
+.wordmark{display:flex; flex-direction:column; line-height:1.05}
+.wordmark b{font-weight:600; font-size:17px; letter-spacing:-.01em}
+.wordmark span{font-family:'Fraunces',serif; font-style:italic; font-size:12px; color:var(--muted); letter-spacing:.02em}
+.tag{margin-left:auto; font-size:11px; color:var(--muted); border:1px solid var(--line); border-radius:999px; padding:4px 10px}
+
+.trust{display:flex; flex-wrap:wrap; gap:0; border-top:1px solid var(--line); margin:0 -20px; padding:0 20px}
+.trust > div{flex:1 1 auto; min-width:150px; padding:10px 16px 12px; border-right:1px solid var(--line)}
+.trust > div:last-child{border-right:0}
+.trust dt{font-size:10.5px; letter-spacing:.05em; text-transform:uppercase; color:var(--muted); margin-bottom:2px}
+.trust dd{margin:0; font-size:12.5px; font-weight:500}
+.trust dd .big{font-family:'Fraunces',serif; font-size:19px; font-weight:600; margin-right:4px}
+.trust .delta{color:var(--good-ink); font-weight:600}
+
+/* ---- persona banner ---- */
+.persona{
+  margin-top:20px; display:grid; grid-template-columns:auto 1fr; gap:18px; align-items:start;
+  background:var(--surface); border:1px solid var(--line); border-left:3px solid var(--brand);
+  border-radius:12px; padding:16px 20px;
+}
+.persona .who{max-width:158px}
+.persona .who .kick{font-size:10.5px; letter-spacing:.06em; text-transform:uppercase; color:var(--brand); font-weight:600}
+.persona .who h1{margin:.15em 0 0; font-size:18px; font-weight:600; letter-spacing:-.01em; text-wrap:balance}
+.persona .body{font-size:12.5px; color:var(--ink-2); margin:0}
+.persona .body b{color:var(--ink); font-weight:600}
+.persona .needs{list-style:none; margin:10px 0 0; padding:0; display:flex; flex-wrap:wrap; gap:6px}
+.persona .needs li{font-size:11px; background:var(--brand-tint); color:var(--brand-deep); border-radius:999px; padding:3px 9px}
+.persona .priority{margin-top:10px; display:flex; align-items:baseline; gap:10px; flex-wrap:wrap}
+.persona .priority > span{font-size:10.5px; letter-spacing:.05em; text-transform:uppercase; color:var(--muted); font-weight:600}
+.persona .priority ol{margin:0; padding:0; list-style:none; display:flex; gap:8px; flex-wrap:wrap; counter-reset:p}
+.persona .priority li{counter-increment:p; font-size:11.5px; color:var(--ink-2)}
+.persona .priority li::before{content:counter(p) ". "; color:var(--brand); font-weight:600}
+
+/* ---- console layout ---- */
+.console{margin-top:20px; display:grid; grid-template-columns:344px 1fr; gap:20px; align-items:start}
+.rail{display:flex; flex-direction:column; gap:16px; position:sticky; top:16px}
+.panel{background:var(--surface); border:1px solid var(--line); border-radius:12px; box-shadow:var(--shadow)}
+.panel h2{margin:0; padding:14px 16px 0; font-size:12px; letter-spacing:.05em; text-transform:uppercase; color:var(--muted); font-weight:600}
+.panel .pad{padding:14px 16px 16px}
+
+/* worksheet */
+.field{display:flex; flex-direction:column; gap:7px; padding:12px 0; border-bottom:1px dashed var(--line)}
+.field:last-child{border-bottom:0; padding-bottom:0}
+.field > label{font-size:12px; font-weight:600; color:var(--ink-2); display:flex; justify-content:space-between; align-items:baseline}
+.field .hint{font-weight:400; color:var(--muted); font-size:11px}
+.seg{display:flex; flex-wrap:wrap; gap:6px}
+.seg button{
+  font:inherit; font-size:12px; cursor:pointer; padding:6px 10px; border-radius:8px;
+  border:1px solid var(--line); background:var(--surface-2); color:var(--ink-2);
+}
+.seg button[aria-pressed="true"]{background:var(--brand); border-color:var(--brand); color:#fff}
+.seg button:focus-visible, .chip:focus-visible, .rankrow:focus-visible, .icon:focus-visible, select:focus-visible{outline:2px solid var(--brand); outline-offset:2px}
+select.biz{font:inherit; font-size:13px; padding:8px 10px; border-radius:8px; border:1px solid var(--line); background:var(--surface-2); color:var(--ink); width:100%}
+.range{display:flex; flex-direction:column; gap:4px}
+input[type=range]{width:100%; accent-color:var(--brand)}
+.range .rv{font-size:13px; font-weight:600}
+.range .rv .unit{font-size:11px; color:var(--muted); font-weight:400}
+
+/* chat */
+.log{display:flex; flex-direction:column; gap:10px; max-height:280px; overflow-y:auto; padding:14px 16px}
+.msg{font-size:12.5px; line-height:1.5}
+.msg .from{font-size:10px; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); display:block; margin-bottom:1px}
+.msg.user{align-self:flex-end; max-width:88%; background:var(--brand-tint); color:var(--brand-deep); border-radius:10px 10px 2px 10px; padding:7px 10px}
+.msg.bot{align-self:flex-start; max-width:95%; background:var(--surface-2); border-radius:10px 10px 10px 2px; padding:7px 10px; color:var(--ink-2)}
+.msg.bot b{color:var(--ink)}
+.chips{display:flex; flex-wrap:wrap; gap:6px; padding:0 16px 16px}
+.chip{
+  font:inherit; font-size:11.5px; cursor:pointer; padding:5px 10px; border-radius:999px;
+  border:1px solid var(--brand); background:transparent; color:var(--brand-deep);
+}
+.chip:hover{background:var(--brand-tint)}
+.chip.reset{border-color:var(--line); color:var(--muted)}
+
+/* board */
+.board-head{display:flex; justify-content:space-between; align-items:flex-end; flex-wrap:wrap; gap:8px; margin-bottom:12px}
+.board-head h2{margin:0; font-size:16px; font-weight:600; letter-spacing:-.01em}
+.board-head .sub{font-size:11.5px; color:var(--muted)}
+.mapcard{background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:12px; box-shadow:var(--shadow); margin-bottom:16px}
+.mapcard svg{display:block; width:100%; height:auto}
+.maplegend{display:flex; gap:14px; font-size:11px; color:var(--muted); margin-top:8px; flex-wrap:wrap}
+.maplegend i{width:9px; height:9px; border-radius:999px; display:inline-block; vertical-align:middle; margin-right:5px}
+
+.ranklist{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:10px}
+.rankrow{
+  display:grid; grid-template-columns:34px 1fr auto; gap:14px; align-items:start;
+  background:var(--surface); border:1px solid var(--line); border-radius:12px; padding:14px 16px;
+  box-shadow:var(--shadow); text-align:left; width:100%; font:inherit; color:inherit; cursor:pointer;
+}
+.rankrow:hover{border-color:var(--brand)}
+.rankrow[aria-expanded="true"]{border-color:var(--brand); box-shadow:0 0 0 1px var(--brand), var(--shadow)}
+.rankrow .rn{font-family:'Fraunces',serif; font-size:24px; font-weight:600; color:var(--brand); line-height:1}
+.rankrow .name{font-weight:600; font-size:14.5px}
+.rankrow .loc{font-size:11px; color:var(--muted); margin-top:1px}
+.rankrow .reasons{display:flex; flex-wrap:wrap; gap:5px; margin-top:9px}
+.pill{font-size:11px; border-radius:6px; padding:2px 7px; line-height:1.4}
+.pill.pro{background:var(--good-tint); color:var(--good-ink)}
+.pill.con{background:var(--risk-tint); color:var(--risk-ink)}
+.score{text-align:right; min-width:78px}
+.score .pct{font-family:'Fraunces',serif; font-size:22px; font-weight:600; line-height:1}
+.score .cap{font-size:9.5px; letter-spacing:.04em; text-transform:uppercase; color:var(--muted)}
+.meter{height:5px; border-radius:999px; background:var(--sunk); margin-top:6px; overflow:hidden}
+.meter i{display:block; height:100%; border-radius:999px}
+.s-hi i{background:var(--good)} .s-mid i{background:var(--brand)} .s-lo i{background:var(--risk)}
+.s-hi .pct{color:var(--good-ink)} .s-mid .pct{color:var(--brand-deep)} .s-lo .pct{color:var(--risk-ink)}
+
+/* drawer */
+.scrim{position:fixed; inset:0; background:rgba(20,26,34,.42); backdrop-filter:blur(2px); z-index:40}
+.drawer{
+  position:fixed; top:0; right:0; height:100%; width:min(560px,94vw); z-index:41;
+  background:var(--surface); border-left:1px solid var(--line); box-shadow:-16px 0 40px -20px rgba(0,0,0,.4);
+  display:flex; flex-direction:column;
+}
+.drawer header{display:flex; align-items:flex-start; gap:12px; padding:18px 20px 14px; border-bottom:1px solid var(--line)}
+.drawer header .rn{font-family:'Fraunces',serif; font-size:20px; font-weight:600; color:var(--brand)}
+.drawer header h3{margin:0; font-size:16px; font-weight:600}
+.drawer header .loc{font-size:11px; color:var(--muted)}
+.icon{margin-left:auto; font:inherit; font-size:18px; line-height:1; background:none; border:1px solid var(--line); border-radius:8px; width:30px; height:30px; cursor:pointer; color:var(--ink-2); flex:none}
+.dbody{overflow-y:auto; padding:18px 20px 28px; display:flex; flex-direction:column; gap:20px}
+.headline{display:flex; align-items:flex-start; gap:12px}
+.headline .pct{font-family:'Fraunces',serif; font-size:34px; font-weight:600; line-height:1; flex:none}
+.headline .ci{font-size:11px; color:var(--muted); margin-top:2px}
+.sect h4{margin:0 0 8px; font-size:11px; letter-spacing:.05em; text-transform:uppercase; color:var(--ink-2)}
+.agenttag{font-size:10px; color:var(--muted); font-weight:400; text-transform:none; letter-spacing:0}
+.cols{display:grid; grid-template-columns:1fr 1fr; gap:14px}
+.cols h4{margin:0 0 7px; font-size:11px; letter-spacing:.05em; text-transform:uppercase}
+.cols .pro-h{color:var(--good-ink)} .cols .con-h{color:var(--risk-ink)}
+.cols ul{list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:8px}
+.cols li{font-size:12px; line-height:1.5; padding-left:16px; position:relative; color:var(--ink-2)}
+.cols li::before{position:absolute; left:0; top:0; font-weight:700}
+.cols .pro li::before{content:"+"; color:var(--good)}
+.cols .con li::before{content:"\2013"; color:var(--risk)}
+.cols li b{color:var(--ink); font-weight:600}
+
+.bars{display:flex; flex-direction:column; gap:7px}
+.bar{display:grid; grid-template-columns:104px 1fr 42px; gap:8px; align-items:center; font-size:11px; color:var(--ink-2)}
+.bar .track{height:7px; border-radius:999px; background:var(--sunk); overflow:hidden}
+.bar .track i{display:block; height:100%; border-radius:999px; background:var(--brand)}
+.bar .track i.pos{background:var(--good)} .bar .track i.neg{background:var(--risk)}
+.bar .val{text-align:right; font-family:'IBM Plex Mono',monospace; color:var(--muted)}
+
+.vlog{display:flex; flex-direction:column; gap:8px}
+.vrow{font-size:11px; border:1px solid var(--line); border-radius:8px; padding:8px 10px; background:var(--surface-2)}
+.vrow .vtop{display:flex; justify-content:space-between; gap:8px; align-items:flex-start}
+.vrow .claim{color:var(--ink-2)}
+.vrow .tool{font-family:'IBM Plex Mono',monospace; font-size:10px; color:var(--muted); margin-top:3px}
+.vb{font-size:9px; font-weight:700; letter-spacing:.03em; padding:2px 6px; border-radius:5px; flex:none; white-space:nowrap}
+.vb.pass{background:var(--good-tint); color:var(--good-ink)}
+.vb.fix{background:var(--risk-tint); color:var(--risk-ink)}
+
+.charts{display:grid; grid-template-columns:1fr 1fr; gap:16px}
+.ch{background:var(--surface-2); border:1px solid var(--line); border-radius:10px; padding:10px 12px 8px}
+.ch h5{margin:0 0 2px; font-size:11.5px; font-weight:600}
+.ch .csub{font-size:10px; color:var(--muted); margin-bottom:4px}
+.ch svg{display:block; width:100%; height:auto; overflow:visible}
+.ch text{font-family:'IBM Plex Mono',ui-monospace,monospace; fill:var(--muted)}
+
+.tstamp{width:100%; border-collapse:collapse; font-size:10.5px; margin-top:4px}
+.tstamp td{border-top:1px solid var(--line); padding:4px 6px; color:var(--ink-2)}
+.tstamp td:first-child{color:var(--muted)}
+.tstamp .ok{color:var(--good-ink); font-family:'IBM Plex Mono',monospace; text-align:right}
+.sources{font-size:10.5px; color:var(--muted); line-height:1.6; border-top:1px solid var(--line); padding-top:12px}
+.sources b{color:var(--ink-2); font-weight:600}
+
+footer{max-width:1260px; margin:36px auto 0; padding:16px 20px 0; border-top:1px solid var(--line); font-size:10.5px; color:var(--muted); line-height:1.6}
+
+@media (max-width:960px){
+  .console{grid-template-columns:1fr}
+  .rail{position:static}
+  .persona{grid-template-columns:1fr}
+  .persona .who{max-width:none}
+}
+@media (max-width:560px){
+  .charts,.cols{grid-template-columns:1fr}
+  .rankrow{grid-template-columns:28px 1fr; grid-template-areas:"n m" "b b"}
+  .rankrow .rn{grid-area:n} .score{grid-area:m; text-align:right}
+  .rankrow .body{grid-area:b}
+}
+@media (prefers-reduced-motion:reduce){*{transition:none!important; animation:none!important}}
+</style>
+
+<div class="topbar">
+  <div class="wrap">
+    <div class="brandrow">
+      <svg class="mark" viewBox="0 0 32 32" fill="none" aria-hidden="true">
+        <circle cx="16" cy="16" r="13" stroke="currentColor" stroke-width="2"/>
+        <path d="M16 6 L19 15 L16 26 L13 15 Z" fill="currentColor"/>
+        <circle cx="16" cy="16" r="2" fill="var(--surface)"/>
+      </svg>
+      <span class="wordmark"><b>골목 컴퍼스</b><span>Alley Compass</span></span>
+      <span class="tag">프로토타입 · 목업 데이터</span>
+    </div>
+    <dl class="trust">
+      <div><dt>ROC-AUC · PR-AUC</dt><dd><span class="big">0.82</span>· 0.71 <span class="mono">(Temporal Test 2024)</span></dd></div>
+      <div><dt>Brier · Calibration</dt><dd>0.14 · <span class="delta">양호</span></dd></div>
+      <div><dt>Top-K 안정성 Lift</dt><dd><span class="delta">+37%</span> 추천 Top 5 vs 서울 평균</dd></div>
+      <div><dt>Agent 반려율 · 검증불가 주장</dt><dd>14% · <span class="delta">0%</span></dd></div>
+      <div><dt>데이터 기준시점</dt><dd class="mono">유동 24-06 · 점포 24 · 매출 24Q2 · 집객 24 · 직장/상주 24H1</dd></div>
+    </dl>
+  </div>
+</div>
+
+<div class="wrap">
+  <section class="persona">
+    <div class="who">
+      <span class="kick">1순위 페르소나</span>
+      <h1>생애 첫 창업 · 위치 미정형</h1>
+    </div>
+    <div>
+      <p class="body">30대 중반~40대 초반. 퇴직·퇴사 후 첫 창업을 준비하며 요식업·생활서비스업을 고려 중이다.
+      보증금 <b>3,000만~1억 원</b>의 제한된 초기자본, 상권분석 전문지식은 없다.
+      지금은 유튜브·블로그·지인 추천·부동산·발품·무료 상권분석 서비스를 각각 확인한 뒤 <b>감각적으로 종합</b>한다.</p>
+      <p class="body" style="margin-top:6px"><b>Pain</b> — “정보는 많은데, 그래서 내가 어디에 열어야 하는지 모르겠다.”</p>
+      <ul class="needs">
+        <li>후보지를 빠르게 좁혀주는 탐색</li>
+        <li>추천 + 위험요인까지 설명</li>
+        <li>숫자의 출처·기준시점 확인</li>
+        <li>예산·업종 바꿔가며 비교</li>
+      </ul>
+      <div class="priority">
+        <span>의사결정 우선순위</span>
+        <ol><li>생존 안정성</li><li>예산 적합성</li><li>고객층 적합성</li><li>성장 가능성</li></ol>
+      </div>
+    </div>
+  </section>
+
+  <div class="console">
+    <aside class="rail">
+      <section class="panel">
+        <h2>A씨가 입력한 조건</h2>
+        <div class="pad" id="worksheet">
+          <div class="field">
+            <label for="biz">업종 <span class="hint">무엇을 열까</span></label>
+            <select class="biz" id="biz">
+              <option value="coffee">커피·음료</option>
+              <option value="laundry">세탁·수선</option>
+              <option value="convenience">편의점</option>
+              <option value="korean">한식·백반</option>
+              <option value="hair">미용실</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="budget">보증금 예산 <span class="hint">초기자본 상한</span></label>
+            <div class="range">
+              <input type="range" id="budget" min="1000" max="15000" step="500" value="5000">
+              <div class="rv"><span id="budgetval">5,000</span><span class="unit"> 만원 이하</span></div>
+            </div>
+          </div>
+          <div class="field">
+            <label>타깃 연령 <span class="hint">주 고객층</span></label>
+            <div class="seg" id="age">
+              <button data-v="20">20대</button>
+              <button data-v="30">30대</button>
+              <button data-v="both" aria-pressed="true">20–30대</button>
+            </div>
+          </div>
+          <div class="field">
+            <label>상권 성격 <span class="hint">어떤 동네</span></label>
+            <div class="seg" id="character">
+              <button data-v="foot" aria-pressed="true">유동인구 중심</button>
+              <button data-v="resident">주거 배후</button>
+              <button data-v="worker">직장 배후</button>
+              <button data-v="campus">대학가</button>
+            </div>
+          </div>
+          <div class="field">
+            <label>우선순위 <span class="hint">무엇을 먼저</span></label>
+            <div class="seg" id="priority">
+              <button data-v="survival" aria-pressed="true">생존 안정성</button>
+              <button data-v="cost">예산 적합성</button>
+              <button data-v="growth">성장 가능성</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel">
+        <h2>대화형 재탐색</h2>
+        <div class="log" id="log"></div>
+        <div class="chips" id="chips">
+          <button class="chip" data-act="laundry">카페 말고 세탁소는?</button>
+          <button class="chip" data-act="budget3000">예산을 3,000만원으로</button>
+          <button class="chip" data-act="age20">20대 유동인구만</button>
+          <button class="chip" data-act="resident">조용한 주거 배후로</button>
+          <button class="chip reset" data-act="reset">처음으로 되돌리기</button>
+        </div>
+      </section>
+    </aside>
+
+    <section class="board">
+      <div class="board-head">
+        <h2>내 조건에서 살아남을 가능성이 높은 골목상권</h2>
+        <div class="sub" id="boardsub"></div>
+      </div>
+      <div class="mapcard">
+        <svg id="map" viewBox="0 0 100 62" role="img" aria-label="서울 골목상권 후보 위치 지도"></svg>
+        <div class="maplegend">
+          <span><i style="background:var(--brand)"></i>추천 상위 5곳</span>
+          <span><i style="border:1.5px solid var(--muted)"></i>그 외 후보</span>
+          <span><i style="background:var(--brand-tint)"></i>한강</span>
+        </div>
+      </div>
+      <ol class="ranklist" id="ranklist"></ol>
+    </section>
+  </div>
+</div>
+
+<footer>
+  출처: 서울 열린데이터광장(data.seoul.go.kr) · 우리마을가게 상권분석서비스 · 제공 서울신용보증재단 · 공공누리 제1유형.
+  본 화면은 경진대회용 프로토타입으로, 표시된 상권 지표·Score·근거 문장은 구조 시연을 위한 <b>목업 데이터</b>이며 실제 분석 결과가 아닙니다.
+  실제 서비스에서는 상권_코드(표준단위구역) 기준으로 5종 데이터셋을 결정론적 Pandas 코드로 결합하고, Temporal Backtest한 <b>LightGBM</b>이 상권×업종 생존 안정성 Score를 산출하며,
+  <b>Recommendation · Risk · Verification</b> 3개 Claude 에이전트가 근거를 생성하고 원본 데이터 검증 Tool로 대조합니다.
+  Score는 개별 점포의 생존확률이 아니라 상권×업종 단위의 폐업위험/생존 안정성 지표입니다.
+</footer>
+
+<script>
+/* ------- mock district data (목업) ------- */
+const D=[
+ {code:"3110001",name:"연남동 먹자골목",gu:"마포구",mx:16,my:24,foot20:94,foot30:78,resident:41,worker:38,transit:82,facilities:63,sat:90,deposit:8500,salesTrend:-8,closureTrend:34,salesBase:3200,hours:"nightlife",weekend:false,nightGap:false},
+ {code:"3110006",name:"망원역 골목",gu:"마포구",mx:12,my:31,foot20:86,foot30:74,resident:55,worker:34,transit:78,facilities:52,sat:80,deposit:6200,salesTrend:-3,closureTrend:26,salesBase:2600,hours:"nightlife",weekend:false,nightGap:false},
+ {code:"3120014",name:"문래동 예술촌 골목",gu:"영등포구",mx:20,my:45,foot20:62,foot30:70,resident:48,worker:66,transit:78,facilities:60,sat:50,deposit:3800,salesTrend:16,closureTrend:9,salesBase:2100,hours:"mixed",weekend:false,nightGap:true},
+ {code:"3130022",name:"공릉동 경춘선숲길",gu:"노원구",mx:85,my:13,foot20:66,foot30:58,resident:70,worker:30,transit:60,facilities:66,sat:40,deposit:2900,salesTrend:6,closureTrend:10,salesBase:1900,hours:"residential",weekend:false,nightGap:true},
+ {code:"3140008",name:"상도동 밤골목",gu:"동작구",mx:34,my:52,foot20:40,foot30:62,resident:82,worker:26,transit:64,facilities:54,sat:38,deposit:3200,salesTrend:2,closureTrend:8,salesBase:2000,hours:"residential",weekend:false,nightGap:true},
+ {code:"3150011",name:"샤로수길(서울대입구)",gu:"관악구",mx:44,my:58,foot20:96,foot30:64,resident:60,worker:40,transit:86,facilities:70,sat:88,deposit:5200,salesTrend:-6,closureTrend:33,salesBase:2800,hours:"nightlife",weekend:false,nightGap:false},
+ {code:"3160003",name:"익선동 한옥골목",gu:"종로구",mx:52,my:27,foot20:70,foot30:66,resident:30,worker:58,transit:88,facilities:60,sat:78,deposit:9000,salesTrend:-4,closureTrend:22,salesBase:3000,hours:"nightlife",weekend:true,nightGap:false},
+ {code:"3170009",name:"성수동 카페거리",gu:"성동구",mx:66,my:29,foot20:82,foot30:80,resident:44,worker:62,transit:80,facilities:66,sat:84,deposit:11000,salesTrend:9,closureTrend:18,salesBase:3600,hours:"daytime",weekend:true,nightGap:false},
+ {code:"3180005",name:"후암동 새길골목",gu:"용산구",mx:48,my:37,foot20:33,foot30:60,resident:76,worker:28,transit:46,facilities:40,sat:30,deposit:3000,salesTrend:7,closureTrend:7,salesBase:1700,hours:"residential",weekend:false,nightGap:true},
+ {code:"3190012",name:"방배 사이길",gu:"서초구",mx:52,my:50,foot20:44,foot30:72,resident:74,worker:36,transit:58,facilities:56,sat:60,deposit:7000,salesTrend:3,closureTrend:11,salesBase:2500,hours:"daytime",weekend:false,nightGap:true}
+];
+
+const BIZ={
+ coffee:{label:"커피·음료",demand:"foot",densityAvg:2.4,footprint:1.0,avg3:63,w:{demand:.34,comp:.22,perf:.16,access:.12,stability:.16}},
+ laundry:{label:"세탁·수선",demand:"resident",densityAvg:0.7,footprint:0.7,avg3:78,w:{demand:.32,comp:.22,perf:.12,access:.08,stability:.26}},
+ convenience:{label:"편의점",demand:"foot",densityAvg:3.1,footprint:1.15,avg3:71,w:{demand:.26,comp:.30,perf:.14,access:.14,stability:.16}},
+ korean:{label:"한식·백반",demand:"worker",densityAvg:4.2,footprint:1.1,avg3:58,w:{demand:.26,comp:.22,perf:.24,access:.12,stability:.16}},
+ hair:{label:"미용실",demand:"resident",densityAvg:2.0,footprint:0.85,avg3:66,w:{demand:.30,comp:.22,perf:.16,access:.12,stability:.20}}
+};
+
+const SHAPES={
+ nightlife:[.06,.03,.02,.05,.22,.40,.55,.62,.70,.85,1.00,.78],
+ residential:[.10,.05,.04,.12,.34,.52,.60,.55,.58,.66,.48,.24],
+ daytime:[.05,.03,.03,.10,.40,.78,1.00,.82,.74,.60,.34,.14],
+ mixed:[.07,.04,.03,.10,.38,.66,.80,.72,.78,.92,.82,.44]
+};
+
+const state={biz:"coffee",budget:5000,age:"both",character:"foot",priority:"survival"};
+const PREF_LABEL={survival:"생존 안정성",cost:"예산 적합성",growth:"성장 가능성"};
+let selected=null;
+
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const fmt=n=>n.toLocaleString("en-US");
+
+function baseMetric(d,key){
+ switch(key){
+  case "foot":return d.foot20*0.55+d.foot30*0.45;
+  case "resident":return d.resident;
+  case "worker":return d.worker;
+  case "campus":return d.foot20*0.7+d.foot30*0.3;
+ }
+}
+function density(d,b){
+ if(BIZ[b].demand==="foot"){
+  const bias={coffee:1.0,convenience:0.9}[b];
+  return Math.round(d.sat/100*BIZ[b].densityAvg*bias*(b==="coffee"?1.5:1.4)*10)/10;
+ }
+ const svc=0.4*d.resident+0.2*(100-d.foot20)+20;
+ return Math.round(svc/100*BIZ[b].densityAvg*10)/10;
+}
+function survival(d){
+ const b=BIZ[state.biz];
+ let demand=0.5*baseMetric(d,b.demand)+0.5*baseMetric(d,state.character);
+ if(state.age==="20")demand=demand*0.6+d.foot20*0.4;
+ if(state.age==="30")demand=demand*0.6+d.foot30*0.4;
+ const dens=density(d,state.biz);
+ const comp=clamp(100-dens/b.densityAvg*55,0,100);
+ const perf=clamp(50+d.salesTrend*2.2,0,100);
+ const stability=clamp(100-d.closureTrend*2.1,0,100);
+ const access=0.6*d.transit+0.4*d.facilities;
+ let w={...b.w};
+ if(state.priority==="survival")w.stability*=1.35;
+ if(state.priority==="growth")w.perf*=1.4;
+ if(state.priority==="cost")w.comp*=1.25;
+ const sum=w.demand+w.comp+w.perf+w.access+w.stability;
+ for(const k in w)w[k]/=sum;
+ const raw=w.demand*demand+w.comp*comp+w.perf*perf+w.access*access+w.stability*stability;
+ const deposit=Math.round(d.deposit*b.footprint/50)*50;
+ const over=deposit-state.budget;
+ let badj=over<=0?6+Math.min(6,-over/1000):-Math.min(26,over/650);
+ if(state.priority==="cost")badj*=1.5;
+ const surv=clamp(Math.round(0.9*raw+badj+8),30,95);
+ return {d,surv,dens,deposit,demand,comp,perf,stability,access,w};
+}
+function ranked(){return D.map(survival).sort((a,b)=>b.surv-a.surv);}
+
+/* ------- reasons ------- */
+function reasons(r){
+ const {d,dens,deposit}=r, b=BIZ[state.biz], avg=b.densityAvg, unit=b.label;
+ const pros=[],cons=[];
+ const footFacing=b.demand==="foot";
+ const yrRate=Math.round((100-b.avg3)/3);
+ if(footFacing&&d.foot20>=78)pros.push(`<b>20대 유동인구 상위 ${100-d.foot20+4}%</b> — 서울 골목상권 1,090곳 기준`);
+ if(dens<=avg*0.85)pros.push(`동종업종 밀도 <b>${dens}개/100㎡</b>, 서울 골목 평균(${avg})보다 ${Math.round((1-dens/avg)*100)}% 낮음 — 경쟁 여유`);
+ if(d.salesTrend>=5)pros.push(`${unit} 추정매출 최근 4개 분기 <b>+${d.salesTrend}%</b> 상승 추세`);
+ if(d.closureTrend<=12)pros.push(`최근 3년 ${unit} 폐업 <b>안정적</b> (연 ${2+Math.round(d.closureTrend*0.06)}→${2+Math.round(d.closureTrend*0.06)+1}건)`);
+ if(!footFacing&&d.resident>=70)pros.push(`배후 상주인구 <b>상위권</b> — 생활밀착 업종 고정수요 확보`);
+ if(b.demand==="worker"&&d.worker>=58)pros.push(`배후 직장인구 두터움 — <b>평일 점심·오후</b> 수요`);
+ if(d.transit>=80)pros.push(`지하철역 도보 5분 — 교통 접근성 상위 ${100-d.transit+6}%`);
+ if(deposit<=state.budget)pros.push(`예상 보증금 <b>${fmt(deposit)}만원</b> — 입력 예산 이내, 초기비용 부담 낮음`);
+
+ if(dens>=avg*1.15)cons.push(`<b>동종업종 과포화</b> — 밀도 ${dens}개/100㎡ (평균 ${avg}). 신규 진입 시 가격 경쟁 불가피`);
+ if(d.closureTrend>=22)cons.push(`최근 2년 ${unit} 폐업 <b>${2+Math.round(d.closureTrend*0.06)}→${2+Math.round(d.closureTrend*0.06)+5}건</b> 증가세 — 상권 피로 신호`);
+ if(deposit>state.budget)cons.push(`예상 보증금 <b>${fmt(deposit)}만원</b>, 입력 예산(${fmt(state.budget)}만원) <b>${fmt(deposit-state.budget)}만원 초과</b>`);
+ if(d.salesTrend<=-3)cons.push(`${unit} 추정매출 최근 4개 분기 <b>${d.salesTrend}%</b> 하락 추세`);
+ if(d.weekend)cons.push(`주말·관광객 편중 — 평일 오후 유동인구 공백, 고정 매출 예측 어려움`);
+ if(d.nightGap&&state.biz==="coffee")cons.push(`<b>21시 이후 유동인구 감소</b> — 저녁 매출 의존 업종엔 불리`);
+ if(footFacing&&d.foot20<45)cons.push(`20대 유동인구 <b>하위권</b> — 트렌드 업종 집객엔 불리`);
+ if(d.transit<50)cons.push(`지하철역과 거리 있음 — 도보 접근 상권, 상권 범위 좁음`);
+ else if(footFacing&&d.transit<80)cons.push(`<b>지하철역 접근성이 상위 추천 상권 대비 낮음</b> — 도보 유입 의존도 큼`);
+ cons.push(`첫 창업 공통 리스크 — 이 업종의 최근 3년 서울 평균 폐업률은 연 <b>${yrRate}%</b> 수준. 초기 6개월 운영자금 확보 권장`);
+
+ return {pros:pros.slice(0,4),cons:cons.slice(0,3)};
+}
+
+/* ------- charts ------- */
+function chHours(d){
+ const shape=SHAPES[d.hours], peak=Math.round(300+d.foot20*12);
+ const v=shape.map(s=>Math.round(peak*s)), max=Math.max(...v);
+ const W=232,H=118,pl=6,pr=8,pt=14,pb=18,iw=W-pl-pr,ih=H-pt-pb;
+ const X=i=>pl+iw*i/(v.length-1), Y=n=>pt+ih*(1-n/max);
+ let ln=v.map((n,i)=>`${i?"L":"M"}${X(i).toFixed(1)},${Y(n).toFixed(1)}`).join(" ");
+ const ar=`${ln} L${X(v.length-1).toFixed(1)},${(pt+ih)} L${pl},${(pt+ih)} Z`;
+ const pi=v.indexOf(max), lx=clamp(X(pi),34,W-64);
+ const tk=[0,3,6,9].map(i=>`<text x="${X(i).toFixed(1)}" y="${H-4}" font-size="8" text-anchor="middle">${i*2}시</text>`).join("");
+ return `<svg viewBox="0 0 ${W} ${H}">
+  <line x1="${pl}" y1="${pt}" x2="${W-pr}" y2="${pt}" stroke="var(--line)" stroke-dasharray="2 3"/>
+  <line x1="${pl}" y1="${pt+ih}" x2="${W-pr}" y2="${pt+ih}" stroke="var(--line)"/>
+  <path d="${ar}" fill="var(--brand)" fill-opacity="0.14"/>
+  <path d="${ln}" fill="none" stroke="var(--brand)" stroke-width="2" stroke-linejoin="round"/>
+  <circle cx="${X(pi).toFixed(1)}" cy="${Y(max).toFixed(1)}" r="3" fill="var(--brand)" stroke="var(--surface-2)" stroke-width="1.5"/>
+  <text x="${lx.toFixed(1)}" y="${Y(max)-6}" font-size="8.5" font-weight="500" fill="var(--ink-2)" text-anchor="middle">${pi*2}시 · ${fmt(max)}명/시</text>
+  ${tk}</svg>`;
+}
+function chDensity(d){
+ const b=BIZ[state.biz], mine=density(d,state.biz), avg=b.densityAvg, max=Math.max(mine,avg)*1.35||1;
+ const W=232,H=96,pl=6,pr=44,bw=W-pl-pr;
+ const row=(y,val,lbl,fill,ink)=>{
+  const w=Math.max(3,bw*val/max);
+  return `<rect x="${pl}" y="${y}" width="${w.toFixed(1)}" height="16" rx="3" fill="${fill}"/>
+   <text x="${pl+w+5}" y="${y+12}" font-size="9" font-weight="600" fill="${ink}">${val}개</text>
+   <text x="${pl}" y="${y-4}" font-size="8.5">${lbl}</text>`;
+ };
+ return `<svg viewBox="0 0 ${W} ${H}">
+  ${row(20,mine,"이 상권","var(--brand)","var(--brand-deep)")}
+  ${row(64,avg,"서울 골목 평균","var(--muted)","var(--muted)")}
+ </svg>`;
+}
+function chSales(d){
+ const b=d.salesBase, sl=d.salesTrend/100*b/5;
+ const v=[0,1,2,3,4,5].map(q=>Math.round((b-sl*(5-q)+((q*37)%5-2)*b*0.012)/10)*10);
+ const max=Math.max(...v)*1.08, min=Math.min(...v)*0.9;
+ const W=232,H=118,pl=6,pr=10,pt=14,pb=18,iw=W-pl-pr,ih=H-pt-pb;
+ const X=i=>pl+iw*i/5, Y=n=>pt+ih*(1-(n-min)/(max-min));
+ let ln=v.map((n,i)=>`${i?"L":"M"}${X(i).toFixed(1)},${Y(n).toFixed(1)}`).join(" ");
+ return `<svg viewBox="0 0 ${W} ${H}">
+  <line x1="${pl}" y1="${pt+ih}" x2="${W-pr}" y2="${pt+ih}" stroke="var(--line)"/>
+  <path d="${ln}" fill="none" stroke="var(--brand)" stroke-width="2" stroke-linejoin="round"/>
+  <circle cx="${X(5).toFixed(1)}" cy="${Y(v[5]).toFixed(1)}" r="3" fill="var(--brand)" stroke="var(--surface-2)" stroke-width="1.5"/>
+  <text x="${(W-pr).toFixed(1)}" y="${Y(v[5])-6}" font-size="8.5" font-weight="500" fill="var(--ink-2)" text-anchor="end">${fmt(v[5])}만원/월</text>
+  <text x="${pl}" y="${H-4}" font-size="8">'23 1Q</text>
+  <text x="${W-pr}" y="${H-4}" font-size="8" text-anchor="end">'24 2Q</text>
+ </svg>`;
+}
+function chClosure(d){
+ const step=d.closureTrend>=22?1.6:0.3, s0=2+Math.round(d.closureTrend*0.06);
+ const v=[0,1,2,3].map(i=>Math.round(s0+i*step));
+ const max=Math.max(...v)*1.25||1, rising=d.closureTrend>=22;
+ const W=232,H=118,pl=8,pr=8,pt=14,pb=18,iw=W-pl-pr,ih=H-pt-pb,g=10;
+ const bw=(iw-g*3)/4;
+ const bars=v.map((n,i)=>{
+  const x=pl+i*(bw+g), h=Math.max(2,ih*n/max), y=pt+ih-h;
+  const fill=(i===3&&rising)?"var(--risk)":(i===3?"var(--good)":"var(--muted)");
+  return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}" rx="2.5" fill="${fill}"/>
+   <text x="${(x+bw/2).toFixed(1)}" y="${(y-4).toFixed(1)}" font-size="8" text-anchor="middle" fill="var(--ink-2)">${n}</text>
+   <text x="${(x+bw/2).toFixed(1)}" y="${H-4}" font-size="8" text-anchor="middle">'2${i+1}</text>`;
+ }).join("");
+ return `<svg viewBox="0 0 ${W} ${H}"><line x1="${pl}" y1="${pt+ih}" x2="${W-pr}" y2="${pt+ih}" stroke="var(--line)"/>${bars}</svg>`;
+}
+
+/* ------- render ------- */
+const rl=document.getElementById("ranklist"), mapEl=document.getElementById("map"),
+ logEl=document.getElementById("log"), boardsub=document.getElementById("boardsub");
+
+function scoreClass(s){return s>=75?"s-hi":s>=60?"s-mid":"s-lo";}
+function scoreColor(s){return s>=75?"var(--good-ink)":s>=60?"var(--brand-deep)":"var(--risk-ink)";}
+
+function render(){
+ const rk=ranked();
+ const top5=rk.slice(0,5);
+ const fit=rk.filter(r=>r.deposit<=state.budget).length;
+ boardsub.textContent=`분석 대상 서울 골목상권 1,090곳 · 예산 이내 후보 ${fit}곳 · ${BIZ[state.biz].label} · 조건 변경 시 수 초 내 전체 재랭킹`;
+
+ rl.innerHTML=rk.map((r,i)=>{
+  const rs=reasons(r), sc=scoreClass(r.surv);
+  const pills=[...rs.pros.slice(0,2).map(t=>`<span class="pill pro">${t.replace(/<[^>]+>/g,"")}</span>`),
+   ...rs.cons.slice(0,1).map(t=>`<span class="pill con">${t.replace(/<[^>]+>/g,"")}</span>`)].join("");
+  return `<button class="rankrow" data-code="${r.d.code}" aria-expanded="${selected===r.d.code}">
+   <span class="rn">${i+1}</span>
+   <span class="body">
+     <span class="name">${r.d.name}</span>
+     <span class="loc mono">${r.d.gu} · 상권_코드 ${r.d.code}</span>
+     <span class="reasons">${pills}</span>
+   </span>
+   <span class="score ${sc}">
+     <span class="pct">${r.surv}점</span>
+     <span class="cap">생존 안정성</span>
+     <span class="meter"><i style="width:${r.surv}%"></i></span>
+   </span>
+  </button>`;
+ }).join("");
+
+ const top5codes=top5.map(r=>r.d.code);
+ let pins="";
+ const river=`<path d="M0,30 C18,24 30,36 46,32 S76,24 100,30 L100,40 C80,44 62,34 46,40 S16,46 0,42 Z" fill="var(--brand-tint)"/>`;
+ const outline=`<path d="M6,14 C22,6 44,4 62,8 C82,12 96,20 95,34 C94,48 82,58 60,58 C40,58 20,54 10,44 C2,36 0,22 6,14 Z" fill="var(--surface-2)" stroke="var(--line)"/>`;
+ D.forEach(d=>{
+  const rank=top5codes.indexOf(d.code);
+  const isSel=selected===d.code;
+  if(rank>=0){
+   pins+=`<g style="cursor:pointer" data-code="${d.code}">
+    <circle cx="${d.mx}" cy="${d.my}" r="${isSel?4.2:3.2}" fill="var(--brand)" stroke="${isSel?'var(--brand-deep)':'var(--surface)'}" stroke-width="${isSel?1.4:1}"/>
+    <text x="${d.mx}" y="${d.my+1.6}" font-size="3.4" font-weight="700" fill="#fff" text-anchor="middle" style="font-family:'Fraunces',serif">${rank+1}</text>
+    <text x="${d.mx}" y="${d.my-4.5}" font-size="3" fill="var(--ink-2)" text-anchor="middle" style="font-family:'IBM Plex Sans KR',sans-serif">${d.name.replace(/\(.*\)/,"").split(" ")[0]}</text>
+   </g>`;
+  }else{
+   pins+=`<g style="cursor:pointer" data-code="${d.code}"><circle cx="${d.mx}" cy="${d.my}" r="1.7" fill="var(--surface)" stroke="var(--muted)" stroke-width="1"/></g>`;
+  }
+ });
+ mapEl.innerHTML=outline+river+`<text x="4" y="52" font-size="3.2" fill="var(--muted)" style="font-family:'IBM Plex Sans KR',sans-serif">한강</text>`+pins;
+ mapEl.querySelectorAll("g[data-code]").forEach(g=>g.addEventListener("click",()=>openDrawer(g.dataset.code)));
+ rl.querySelectorAll(".rankrow").forEach(b=>b.addEventListener("click",()=>openDrawer(b.dataset.code)));
+}
+
+/* ------- drawer ------- */
+function barRow(label,v,cls){
+ v=clamp(v,0,100);
+ return `<div class="bar"><span>${label}</span><span class="track"><i class="${cls||''}" style="width:${v.toFixed(0)}%"></i></span><span class="val">${Math.round(v)}</span></div>`;
+}
+function openDrawer(code){
+ selected=code;
+ const r=survival(D.find(x=>x.code===code));
+ const d=r.d, b=BIZ[state.biz], rs=reasons(r);
+ const rank=ranked().findIndex(x=>x.d.code===code)+1;
+ const numCount=(rs.pros.join(" ").match(/\d/g)||[]).length+(rs.cons.join(" ").match(/\d/g)||[]).length;
+
+ // §16 personalized ranking components
+ const modelStab=Math.round(0.45*r.stability+0.30*r.perf+0.25*r.comp);
+ const budgetFit=Math.round(clamp(r.deposit<=state.budget
+   ? 86+Math.min(14,(state.budget-r.deposit)/state.budget*45)
+   : 100-(r.deposit-state.budget)/state.budget*150,0,100));
+ const custFit=Math.round(r.demand);
+ const prefFit=state.priority==="survival"?modelStab:state.priority==="cost"?budgetFit:Math.round(r.perf);
+
+ // F-14 feature importance
+ let feats=[
+  {k:"타깃 고객 수요",v:r.demand,w:r.w.demand},
+  {k:"동종업종 경쟁 여유",v:r.comp,w:r.w.comp},
+  {k:"매출 추세",v:r.perf,w:r.w.perf},
+  {k:"폐업 추세 안정성",v:r.stability,w:r.w.stability},
+  {k:"교통·집객 접근성",v:r.access,w:r.w.access}
+ ].map(f=>({...f,c:f.w*(f.v-50)}));
+ const maxc=Math.max(...feats.map(f=>Math.abs(f.c)))||1;
+ feats.sort((a,b)=>Math.abs(b.c)-Math.abs(a.c));
+
+ // §10.3 verification log — one claim rejected & corrected, rest pass
+ const access=0.6*d.transit+0.4*d.facilities;
+ let corr;
+ if(d.salesTrend>=5){
+  corr={claim:`최근 4개 분기 ${b.label} 추정매출 +${d.salesTrend}%`,tool:"Trend Calculator",
+   note:`계산값 +${(d.salesTrend-2.2).toFixed(1)}% · 허용오차(±1%p) 초과 → 재생성 후 “+약 ${Math.round(d.salesTrend/2)*2}%”로 완화`};
+ }else if(b.demand==="foot"&&d.foot20>=78){
+  corr={claim:`20대 유동인구 상위 ${100-d.foot20+2}%`,tool:"Percentile Tool",
+   note:`계산값 상위 ${(100-d.foot20+0.3).toFixed(1)}% · 데이터와 불일치 → 재생성 후 “상위 약 ${Math.round((100-d.foot20)/5)*5+5}%”`};
+ }else{
+  const p=Math.round(100-access);
+  corr={claim:`교통·집객 접근성 상위 ${p-3}%`,tool:"Percentile Tool",
+   note:`계산값 상위 ${(p+2.3).toFixed(1)}% · 반올림 오차 → “상위 약 ${Math.round(p/5)*5}%”로 완화`};
+ }
+ const passItems=[
+  {claim:`동종업종 밀도 ${r.dens}개/100㎡ (서울 평균 ${b.densityAvg})`,tool:"Competition Density Tool",real:`이 상권 ${r.dens} / 서울 평균 ${b.densityAvg} → ${r.dens<b.densityAvg?"평균 이하 확인":"평균 이상"}`},
+  {claim:`예상 보증금 ${fmt(r.deposit)}만원 ${r.deposit<=state.budget?"≤":">"} 예산 ${fmt(state.budget)}만원`,tool:"Budget Validator",real:r.deposit<=state.budget?"예산 이내 확인":`${fmt(r.deposit-state.budget)}만원 초과`},
+  {claim:`배후 상주인구 ${d.resident} · 직장인구 ${d.worker} · 폐업추세 지수 ${d.closureTrend}`,tool:"Data Lookup Tool",real:"원본 데이터프레임 값과 일치"}
+ ];
+ const vlog=`
+  <div class="vrow">
+    <div class="vtop"><span class="claim">“${corr.claim}” <span class="agenttag">(1차 생성)</span></span><span class="vb fix">1차 반려 → 정정</span></div>
+    <div class="tool">→ ${corr.tool} · ${corr.note}</div>
+  </div>
+  ${passItems.map(it=>`<div class="vrow">
+    <div class="vtop"><span class="claim">“${it.claim}”</span><span class="vb pass">PASS</span></div>
+    <div class="tool">→ ${it.tool} · ${it.real}</div>
+  </div>`).join("")}
+  <div class="vrow">
+    <div class="vtop"><span class="claim">최종 응답 내 수치 ${numCount}개 · Assertion Validator</span><span class="vb pass">전부 일치</span></div>
+    <div class="tool">→ 허용오차 이내 · 검증불가 주장 0건 · 기준시점 혼용 0건</div>
+  </div>`;
+
+ document.querySelectorAll(".scrim,.drawer").forEach(e=>e.remove());
+ const scrim=document.createElement("div"); scrim.className="scrim"; scrim.addEventListener("click",closeDrawer);
+ const dr=document.createElement("aside"); dr.className="drawer"; dr.setAttribute("role","dialog"); dr.setAttribute("aria-label",d.name+" 상세 근거");
+ dr.innerHTML=`
+  <header>
+    <span class="rn">${rank}</span>
+    <div><h3>${d.name}</h3><div class="loc mono">${d.gu} · 상권_코드 ${d.code} · ${b.label}</div></div>
+    <button class="icon" aria-label="닫기">×</button>
+  </header>
+  <div class="dbody">
+    <div class="headline">
+      <span class="pct" style="color:${scoreColor(r.surv)}">${r.surv}점</span>
+      <div>
+        <div style="font-weight:600">생존 안정성 Score <span class="agenttag">· 상권 × 업종 단위</span></div>
+        <div class="ci">LightGBM 산출 · 모델 신뢰도 ${r.surv>=60?"보통~높음":"보통"} (Calibration 양호 · Cold-start 아님) · 개별 점포 생존확률로 해석하지 않음</div>
+      </div>
+    </div>
+
+    <div class="sect cols">
+      <div class="pro">
+        <h4 class="pro-h">추천 근거 <span class="agenttag">· Recommendation Agent</span></h4>
+        <ul>${rs.pros.map(t=>`<li>${t}</li>`).join("")}</ul>
+      </div>
+      <div class="con">
+        <h4 class="con-h">반대 근거 <span class="agenttag">· Risk Agent</span></h4>
+        <ul>${rs.cons.map(t=>`<li>${t}</li>`).join("")}</ul>
+      </div>
+    </div>
+
+    <div class="sect">
+      <h4>검증 에이전트 로그 <span class="agenttag">· Verification Agent → 원본 데이터 Tool 호출</span></h4>
+      <div class="vlog">${vlog}</div>
+    </div>
+
+    <div class="sect">
+      <h4>왜 이 순위인가 <span class="agenttag">· 개인화 Ranking = 모델 Score + 예산 + 고객층 + 선호</span></h4>
+      <div class="bars">
+        ${barRow("생존 안정성(모델)",modelStab)}
+        ${barRow("예산 적합성",budgetFit)}
+        ${barRow("고객층 적합성",custFit)}
+        ${barRow("선호 반영 ("+PREF_LABEL[state.priority]+")",prefFit)}
+      </div>
+    </div>
+
+    <div class="sect">
+      <h4>주요 예측 요인 <span class="agenttag">· Feature Importance (LightGBM)</span></h4>
+      <div class="bars">
+        ${feats.slice(0,4).map(f=>`<div class="bar"><span>${f.k}</span><span class="track"><i class="${f.c>=0?'pos':'neg'}" style="width:${(Math.abs(f.c)/maxc*100).toFixed(0)}%"></i></span><span class="val">${f.c>=0?'+':''}${f.c.toFixed(1)}</span></div>`).join("")}
+      </div>
+    </div>
+
+    <div class="sect">
+      <h4>상권 지표 <span class="agenttag">· 원본 데이터셋 시각화</span></h4>
+      <div class="charts">
+        <div class="ch"><h5>시간대별 유동인구</h5><div class="csub">2시간 단위 · 상권 영역 내 체류인구</div>${chHours(d)}</div>
+        <div class="ch"><h5>동종업종 밀도</h5><div class="csub">점포수 / 100㎡ · 이 상권 vs 서울 평균</div>${chDensity(d)}</div>
+        <div class="ch"><h5>분기별 추정매출 추세</h5><div class="csub">${b.label} 점포당 월 추정매출</div>${chSales(d)}</div>
+        <div class="ch"><h5>연도별 동종업종 폐업</h5><div class="csub">상권 내 ${b.label} 폐업 점포수</div>${chClosure(d)}</div>
+      </div>
+    </div>
+
+    <div class="sources">
+      <b>데이터 기준시점 (결합 Pipeline 자동 점검)</b>
+      <table class="tstamp">
+        <tr><td>유동인구 · 길단위인구-상권 (OA-15568)</td><td class="ok">2024-06</td></tr>
+        <tr><td>추정매출-상권 (OA-15572)</td><td class="ok">2024 2분기</td></tr>
+        <tr><td>점포-상권 (OA-15577)</td><td class="ok">2024</td></tr>
+        <tr><td>집객시설-상권 (OA-15580)</td><td class="ok">2024</td></tr>
+        <tr><td>직장·상주인구-상권 (OA-15569 / OA-15584)</td><td class="ok">2024 상반기</td></tr>
+      </table>
+      <div style="margin-top:5px">기준시점 최대 격차 6개월 · 허용범위(12개월) 이내 → <b>Warning 없음</b>. 상권_코드 기준 자연 조인 · 집계 연산은 Pandas 코드가 수행(LLM 미사용) · 공공누리 제1유형.</div>
+    </div>
+  </div>`;
+ document.body.append(scrim,dr);
+ dr.querySelector(".icon").addEventListener("click",closeDrawer);
+ render();
+}
+function closeDrawer(){selected=null;document.querySelectorAll(".scrim,.drawer").forEach(e=>e.remove());render();}
+document.addEventListener("keydown",e=>{if(e.key==="Escape")closeDrawer();});
+
+/* ------- conversation ------- */
+function addMsg(cls,html){
+ const m=document.createElement("div"); m.className="msg "+cls;
+ m.innerHTML=`<span class="from">${cls==="user"?"A씨":"골목 컴퍼스"}</span>${html}`;
+ logEl.append(m); logEl.scrollTop=logEl.scrollHeight;
+}
+function summarize(prevTop,label){
+ const now=ranked().slice(0,5).map(r=>r.d.name);
+ const changed=now.filter(n=>!prevTop.includes(n)).length;
+ const lead=ranked()[0];
+ return `${label} 이미 결합된 상권_코드 데이터와 학습된 모델을 <b>재사용</b>해 전체 재분석 없이 다시 Ranking했어요.
+  상위 5곳 중 <b>${changed}곳</b>이 바뀌었고, 1위는 <b>${lead.d.name}</b>(생존 안정성 ${lead.surv}점)입니다.`;
+}
+
+/* ------- controls ------- */
+const biz=document.getElementById("biz"), budget=document.getElementById("budget"),
+ budgetval=document.getElementById("budgetval");
+
+function setSeg(id,v){
+ document.querySelectorAll(`#${id} button`).forEach(b=>b.setAttribute("aria-pressed",String(b.dataset.v===v)));
+}
+biz.addEventListener("change",()=>{
+ const prev=ranked().slice(0,5).map(r=>r.d.name);
+ state.biz=biz.value; render();
+ addMsg("bot",summarize(prev,`업종을 <b>${BIZ[state.biz].label}</b>(으)로 바꿨습니다. 수요·경쟁·폐업 추세 가중치가 업종에 맞게 재조정됩니다.`));
+ if(selected)openDrawer(selected);
+});
+budget.addEventListener("input",()=>{
+ state.budget=+budget.value; budgetval.textContent=fmt(state.budget); render();
+ if(selected)openDrawer(selected);
+});
+["age","character","priority"].forEach(id=>{
+ document.getElementById(id).addEventListener("click",e=>{
+  const btn=e.target.closest("button"); if(!btn)return;
+  const prev=ranked().slice(0,5).map(r=>r.d.name);
+  state[id]=btn.dataset.v; setSeg(id,btn.dataset.v); render();
+  const names={age:"타깃 연령",character:"상권 성격",priority:"우선순위"};
+  addMsg("bot",summarize(prev,`${names[id]} 조건을 <b>“${btn.textContent}”</b>(으)로 바꿨습니다.`));
+  if(selected)openDrawer(selected);
+ });
+});
+
+document.getElementById("chips").addEventListener("click",e=>{
+ const btn=e.target.closest(".chip"); if(!btn)return;
+ const act=btn.dataset.act;
+ const prev=ranked().slice(0,5).map(r=>r.d.name);
+ if(act==="reset"){
+  Object.assign(state,{biz:"coffee",budget:5000,age:"both",character:"foot",priority:"survival"});
+  biz.value="coffee"; budget.value=5000; budgetval.textContent="5,000";
+  setSeg("age","both");setSeg("character","foot");setSeg("priority","survival");
+  render(); addMsg("user","처음 조건으로 되돌려줘");
+  addMsg("bot",`A씨의 최초 조건(커피·음료 · 보증금 5,000만원 이하 · 20–30대 · 유동인구 중심 · 생존 안정성 우선)으로 초기화했습니다.`);
+ }else if(act==="laundry"){
+  state.biz="laundry"; biz.value="laundry"; render();
+  addMsg("user","카페 말고 세탁소는?");
+  addMsg("bot",summarize(prev,"세탁·수선 기준으로 바꿨어요. 데이터를 다시 수집하지 않고 유동인구 가중치를 내리고 <b>상주인구·폐업 추세</b> 가중치를 올렸습니다."));
+ }else if(act==="budget3000"){
+  state.budget=3000; budget.value=3000; budgetval.textContent="3,000"; render();
+  addMsg("user","예산을 3,000만원으로 낮추면?");
+  addMsg("bot",summarize(prev,"보증금 상한을 <b>3,000만원</b>으로 낮췄습니다. 예산을 초과하는 후보는 적합도가 감소합니다."));
+ }else if(act==="age20"){
+  state.age="20"; setSeg("age","20"); render();
+  addMsg("user","20대 유동인구만 볼게");
+  addMsg("bot",summarize(prev,"수요 레이어를 <b>20대 유동인구</b>로 좁혔습니다."));
+ }else if(act==="resident"){
+  state.character="resident"; setSeg("character","resident"); render();
+  addMsg("user","조용한 주거 배후가 좋아");
+  addMsg("bot",summarize(prev,"상권 성격을 <b>주거 배후</b>로 바꿨습니다. 상주인구 비중이 큰 골목이 상위로 올라옵니다."));
+ }
+ if(selected)openDrawer(selected);
+});
+
+/* ------- init ------- */
+render();
+addMsg("bot",`서울 골목상권 <b>1,090곳</b>을 A씨 조건으로 재평가했습니다.
+ 20대 유동인구는 연남동·샤로수길이 최고지만, 동종 카페 과포화·예산 초과로 <b>미래 생존 안정성은 오히려 낮습니다</b>.
+ 매출 상승·낮은 경쟁밀도·예산 적합성이 겹친 <b>${ranked()[0].d.name}</b>이(가) 1위(생존 안정성 ${ranked()[0].surv}점)입니다.
+ 행을 누르면 추천·반대 근거, 검증 로그, 예측 요인을 볼 수 있어요.`);
+</script>

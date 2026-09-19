@@ -1,0 +1,93 @@
+/* ──────────────────────────────────────────────────────────────
+ * 스타일 진입점. main.tsx 가 이 파일 하나만 import 한다.
+ *
+ *   tokens.primitive.css   재료 (색 팔레트·크기 스케일)
+ *   tokens.semantic.css    역할 (surface/fg/accent … + 라이트·다크)
+ *   theme.css              Tailwind 등록 (@theme inline)
+ *   globals.css            base 레이어 — 여기 아래
+ *
+ * 컴포넌트 스타일은 이 파일에 쓰지 않는다. 전부 컴포넌트 안의
+ * Tailwind 유틸리티 + cva 변형으로 표현한다.
+ * ────────────────────────────────────────────────────────────── */
+
+@import "tailwindcss";
+@import "./tokens.primitive.css";
+@import "./tokens.semantic.css";
+@import "./theme.css";
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--bg);
+    color: var(--fg-body);
+    font-family: var(--font-sans);
+    font-size: var(--size-base);
+    line-height: 1.7;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    /* 한글은 단어 중간에서 끊기면 읽기 나쁘다 */
+    word-break: keep-all;
+    overflow-wrap: break-word;
+  }
+
+  /* 수치는 어디서든 자릿수가 세로로 맞아야 한다 */
+  :is(table, .tabular) {
+    font-variant-numeric: tabular-nums;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    color: var(--fg);
+    font-weight: 600;
+    letter-spacing: -0.015em;
+    text-wrap: balance;
+  }
+
+  /* 포커스 표시는 절대 없애지 않는다. 마우스 클릭엔 안 뜨고
+     키보드 이동에만 뜨도록 :focus-visible 만 쓴다. */
+  :focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  [hidden] { display: none !important; }
+
+  ::selection {
+    background: var(--accent-subtle);
+    color: var(--accent-text);
+  }
+
+  /* 스크롤 영역이 많은 화면이라 기본 스크롤바가 눈에 거슬린다 */
+  @supports (scrollbar-width: thin) {
+    .scroll-slim {
+      scrollbar-width: thin;
+      scrollbar-color: var(--border-strong) transparent;
+    }
+  }
+}
+
+@layer utilities {
+  /* 키보드 사용자에게만 읽히는 텍스트 (차트 대체 설명 등) */
+  .sr-only {
+    position: absolute;
+    width: 1px; height: 1px;
+    padding: 0; margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border-width: 0;
+  }
+}
+
+/* 모션 최소화를 요청한 사용자에게는 애니메이션을 걷어낸다 */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

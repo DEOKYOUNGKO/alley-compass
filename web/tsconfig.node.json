@@ -1,0 +1,17 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2023"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "types": ["node"],
+    // node_modules 의 타입까지 검사하지 않는다. 라이브러리가 배포한 .d.ts 는
+    // 우리가 고칠 수 없고, 실제로 @supabase/auth-js 의 WebAuthn 타입이
+    // TypeScript 7 의 lib.dom 과 충돌한다. 우리 코드는 그대로 다 검사한다.
+    "skipLibCheck": true,
+    "noEmit": true,
+    "isolatedModules": true,
+    "strict": true
+  },
+  "include": ["vite.config.ts"]
+}
