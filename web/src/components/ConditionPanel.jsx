@@ -1,4 +1,3 @@
-import { BIZ_OPTIONS } from "../data/businessTypes";
 import { fmt } from "../lib/format";
 
 /* 조건 입력 패널 (F-01) — 업종·예산·타깃 연령·상권 성격·우선순위.
@@ -38,27 +37,31 @@ const SEG_GROUPS = [
   },
 ];
 
-export default function ConditionPanel({ conditions, onBizChange, onBudgetChange, onSegChange }) {
+export default function ConditionPanel({ conditions, bizOptions, onBizChange, onBudgetChange, onSegChange }) {
   return (
     <section className="panel">
       <h2>A씨가 입력한 조건</h2>
       <div className="pad">
         <div className="field">
           <label htmlFor="biz">
-            업종 <span className="hint">무엇을 열까</span>
+            업종 <span className="hint">서울시 데이터로 실제 수집된 업종만</span>
           </label>
-          <select
-            className="biz"
-            id="biz"
-            value={conditions.biz}
-            onChange={(e) => onBizChange(e.target.value)}
-          >
-            {BIZ_OPTIONS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-          </select>
+          {bizOptions.length === 0 ? (
+            <div className="hint">불러오는 중…</div>
+          ) : (
+            <select
+              className="biz"
+              id="biz"
+              value={conditions.biz}
+              onChange={(e) => onBizChange(e.target.value)}
+            >
+              {bizOptions.map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
 
         <div className="field">

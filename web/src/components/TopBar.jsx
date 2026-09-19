@@ -1,6 +1,9 @@
 /* 상단 바 — 브랜드 + 모델/AI 신뢰지표 스트립.
- * trust 스트립의 숫자는 PRD §20 KPI 항목이며, 현재는 목업이다.
- * 실제로는 model_versions 테이블(ROC-AUC 등)과 verification_claims 집계에서 온다. */
+ * 랭킹·근거 문장은 이제 실제 backend(FastAPI)에서 온다. 다만 이 trust
+ * 스트립의 모델 성능 숫자(ROC-AUC 등, PRD §20 KPI)는 LightGBM을 아직 학습
+ * 전이라 여전히 목업이다 — model_versions 테이블에 실제 값이 쌓이면 여기를
+ * 그 값으로 바꾼다. 기준시점은 상권마다 달라 상세 Drawer에서 실제 값을
+ * 보여주므로 여기선 빼뒀다. */
 export default function TopBar() {
   return (
     <div className="topbar">
@@ -15,7 +18,7 @@ export default function TopBar() {
             <b>골목 컴퍼스</b>
             <span>Alley Compass</span>
           </span>
-          <span className="tag">프로토타입 · 목업 데이터</span>
+          <span className="tag">실데이터 랭킹 · 모델 성능지표는 목업</span>
         </div>
         <dl className="trust">
           <div>
@@ -41,10 +44,6 @@ export default function TopBar() {
             <dd>
               14% · <span className="delta">0%</span>
             </dd>
-          </div>
-          <div>
-            <dt>데이터 기준시점</dt>
-            <dd className="mono">유동 24-06 · 점포 24 · 매출 24Q2 · 집객 24 · 직장/상주 24H1</dd>
           </div>
         </dl>
       </div>

@@ -26,12 +26,13 @@
 | 데이터 수집 파이프라인 (ETL) | ✅ 동작 | [`alley_compass_etl/`](alley_compass_etl/) |
 | 검증 Tool 6종 | ✅ 동작 (LLM 미사용, 결정론적) | [`alley_compass_etl/verification_tools.py`](alley_compass_etl/verification_tools.py) |
 | Claude 에이전트 3종 | ✅ 동작 (Sonnet 5, 라이브 검증 완료) | [`alley_compass_etl/narrative_agents.py`](alley_compass_etl/narrative_agents.py), [`fact_sheet.py`](alley_compass_etl/fact_sheet.py), [`pipeline.py`](alley_compass_etl/pipeline.py) |
-| 웹 프론트 | ⚠️ 화면 완성, **데이터는 목업** | [`web/`](web/) |
-| FastAPI 백엔드 | ⚠️ 동작 (`/rank`, `/districts/{code}/agents`), **랭킹은 아직 휴리스틱** | [`backend/`](backend/) |
+| 웹 프론트 | ✅ `backend/`에 연결됨 — 상권·업종·랭킹은 실제 데이터, 추천/반대 근거는 버튼으로 실제 Claude 호출 | [`web/`](web/) |
+| FastAPI 백엔드 | ✅ 동작 (`/rank`, `/districts/{code}/agents`), **랭킹 점수는 아직 휴리스틱** | [`backend/`](backend/) |
 | LightGBM 예측 모델 | ⚠️ 학습 파이프라인 완성, **실제 다분기 데이터로 학습 전** (합성 데이터로 배관만 검증) | [`ml/`](ml/) |
 
-**화면에 보이는 숫자는 아직 전부 목업이다.** 실데이터를 흘리려면 서울 열린데이터광장
-API 키와 Supabase 프로젝트가 필요하다 (아래 빠른 시작 참고).
+**웹 화면의 상권·업종·랭킹은 이제 실제 데이터다** (`alley_compass_etl.py`로 수집한 만큼만).
+생존 안정성 Score는 LightGBM이 아니라 임시 휴리스틱이고, 지도·상세 시계열 차트는 아직
+없다 — 자세한 건 [`web/README.md`](web/README.md)의 "지금 화면에서 진짜인 것/아직 아닌 것" 표 참고.
 
 - **Claude 에이전트 3종**: `claude-sonnet-5`로 라이브 검증 완료 —
   `python alley_compass_etl/pipeline.py` 실행 결과 추천 근거 3개·반대 근거
