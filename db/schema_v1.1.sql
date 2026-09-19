@@ -6,6 +6,10 @@
 --   - 접근 제어 전략을 명시적으로 문서화
 --   - anon 역할에 대한 개인 세션 테이블 접근을 명시적으로 revoke
 --     (기존에도 grant가 없어 결과적으로 막혀 있었으나, 의도를 코드로 명확히 함)
+--
+-- v1.2: service_role 명시적 GRANT (신형 secret key 대응)
+-- v1.3: 로그인 — profiles 테이블·가입 트리거, 검색 기록 쓰기 권한을
+--       FastAPI(service_role) 전용으로 축소. 파일 끝 섹션만 따로 실행 가능.
 -- =========================================================
 
 
@@ -185,7 +189,9 @@ create table public.predictions (
 -- 사용자가 입력한 창업 조건
 --
 -- user_id는 nullable:
--- 로그인 없는 MVP 사용자도 FastAPI를 통해 사용할 수 있음
+-- 서비스는 로그인 필수이고 FastAPI가 항상 user_id를 채운다.
+-- 그래도 nullable로 두는 이유는 탈퇴 시 on delete set null로
+-- 기록과 사람의 연결만 끊고 조건 기록은 남기기 위해서다(v1.3 ③).
 --
 -- [접근 전략 - MVP]
 -- 이 테이블 이하(search_sessions, recommendation_runs,
@@ -541,12 +547,10 @@ using (true);
 -- =========================================================
 -- SEARCH SESSION POLICIES
 --
--- [MVP 기간] 아래 정책은 authenticated 역할에만 적용되며,
--- MVP는 로그인을 요구하지 않으므로 실제로는 거의 트리거되지
--- 않는다. 모든 실질적인 접근은 FastAPI가 service_role로
--- 수행한다(RLS 우회). 이 정책들은 향후 로그인 기능 도입 시
--- 프론트-Supabase 직접 연동 경로를 열기 위해 미리 준비해
--- 두는 것이다.
+-- 실제 쓰기는 FastAPI가 service_role로 수행한다(RLS 우회).
+-- ⚠️ 아래 insert/update/delete 정책은 v1.3 패치에서 제거된다 —
+-- 로그인이 켜진 뒤로는 사용자가 FastAPI를 우회해 기록을 쓰는
+-- 경로가 되기 때문이다. 남는 것은 본인 기록 select뿐이다.
 -- =========================================================
 
 create policy "Users can read own search sessions"
@@ -766,6 +770,174 @@ to service_role;
 grant usage, select
 on all sequences in schema public
 to service_role;
+
+
+-- =========================================================
+-- v1.3 패치 — 로그인 (Supabase Auth)
+--
+-- 서비스 전체가 로그인 필수가 되면서 바뀌는 것 세 가지.
+-- 기존 프로젝트에는 이 섹션만 SQL Editor 에 붙여넣어 실행하면
+-- 된다. 여러 번 실행해도 안전하다(if exists / or replace).
+--
+--   ① profiles       화면에 보여줄 이름·사진. 가입하면 트리거가 만든다.
+--   ② 권한 축소      로그인한 사용자가 anon key 로 검색 기록을 직접
+--                    쓰거나 지우지 못하게 한다. 쓰기는 FastAPI 만.
+--   ③ search_sessions.user_id 는 그대로 on delete set null.
+--                    탈퇴하면 계정은 지워지고, 검색 조건 기록은
+--                    누구의 것인지 연결을 끊은 채 모델 학습용으로
+--                    남는다(PRD §22 Data Flywheel). 개인정보처리방침
+--                    (web /privacy)의 파기 조항과 같은 내용이다.
+--
+-- 회원 테이블을 따로 만들지 않는다 — 계정·비밀번호·소셜 연동은
+-- Supabase 가 auth.users / auth.identities 에서 관리한다.
+-- =========================================================
+
+
+-- ① profiles ────────────────────────────────────────────────
+
+create table if not exists public.profiles (
+    -- auth.users 와 1:1. 탈퇴하면 같이 지워진다.
+    id uuid primary key
+        references auth.users(id)
+        on delete cascade,
+
+    email text,
+    display_name text,
+    avatar_url text,
+
+    -- 처음 가입한 방식: email / google / kakao
+    provider text,
+
+    created_at timestamptz not null default now(),
+    updated_at timestamptz not null default now()
+);
+
+comment on table public.profiles is
+    '로그인 사용자의 표시 정보. auth.users 가입 시 트리거(handle_new_user)가 생성한다.';
+
+
+-- 가입 시 profiles 한 줄을 만든다.
+-- 소셜 로그인은 이름·사진을 raw_user_meta_data 로 넘겨준다.
+-- 카카오는 name 대신 nickname 으로 올 수 있어 순서대로 찾는다.
+--
+-- security definer: auth 스키마 트리거는 가입 요청자 권한으로 돌기
+-- 때문에, public.profiles 에 쓰려면 함수 소유자 권한이 필요하다.
+-- search_path 를 비워 두는 것은 security definer 함수의 표준 방어다.
+create or replace function public.handle_new_user()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+    insert into public.profiles (id, email, display_name, avatar_url, provider)
+    values (
+        new.id,
+        new.email,
+        coalesce(
+            new.raw_user_meta_data ->> 'full_name',
+            new.raw_user_meta_data ->> 'name',
+            new.raw_user_meta_data ->> 'nickname',
+            split_part(new.email, '@', 1)
+        ),
+        coalesce(
+            new.raw_user_meta_data ->> 'avatar_url',
+            new.raw_user_meta_data ->> 'picture'
+        ),
+        coalesce(new.raw_app_meta_data ->> 'provider', 'email')
+    )
+    on conflict (id) do nothing;
+
+    return new;
+end;
+$$;
+
+drop trigger if exists on_auth_user_created on auth.users;
+
+create trigger on_auth_user_created
+after insert on auth.users
+for each row execute function public.handle_new_user();
+
+
+-- 패치 적용 전에 이미 가입한 사용자도 profiles 를 갖게 한다.
+insert into public.profiles (id, email, display_name, avatar_url, provider)
+select
+    u.id,
+    u.email,
+    coalesce(
+        u.raw_user_meta_data ->> 'full_name',
+        u.raw_user_meta_data ->> 'name',
+        u.raw_user_meta_data ->> 'nickname',
+        split_part(u.email, '@', 1)
+    ),
+    coalesce(u.raw_user_meta_data ->> 'avatar_url', u.raw_user_meta_data ->> 'picture'),
+    coalesce(u.raw_app_meta_data ->> 'provider', 'email')
+from auth.users u
+on conflict (id) do nothing;
+
+
+-- updated_at 자동 갱신
+create or replace function public.touch_updated_at()
+returns trigger
+language plpgsql
+set search_path = ''
+as $$
+begin
+    new.updated_at = now();
+    return new;
+end;
+$$;
+
+drop trigger if exists profiles_touch_updated_at on public.profiles;
+
+create trigger profiles_touch_updated_at
+before update on public.profiles
+for each row execute function public.touch_updated_at();
+
+
+-- profiles 접근: 본인 것만 읽고, 이름만 고칠 수 있다.
+-- email / provider 는 auth.users 가 원본이라 사용자가 바꾸면 어긋난다.
+alter table public.profiles enable row level security;
+
+drop policy if exists "Users can read own profile" on public.profiles;
+create policy "Users can read own profile"
+on public.profiles
+for select
+to authenticated
+using ((select auth.uid()) = id);
+
+drop policy if exists "Users can update own profile" on public.profiles;
+create policy "Users can update own profile"
+on public.profiles
+for update
+to authenticated
+using ((select auth.uid()) = id)
+with check ((select auth.uid()) = id);
+
+revoke all on public.profiles from anon, authenticated;
+grant select on public.profiles to authenticated;
+grant update (display_name, avatar_url) on public.profiles to authenticated;
+grant select, insert, update, delete on public.profiles to service_role;
+
+
+-- ② 검색 기록 권한 축소 ─────────────────────────────────────
+--
+-- v1.1 은 "향후 로그인 도입용"으로 authenticated 에 쓰기·삭제까지
+-- 열어 두었다. 로그인이 실제로 켜진 지금, 그대로 두면 사용자가
+-- FastAPI 를 거치지 않고 anon key + 자기 토큰으로 search_sessions 에
+-- 임의 조건을 넣거나 기록을 지울 수 있다 — 학습 데이터 오염이다.
+-- 기록은 FastAPI(service_role)만 쓰고, 사용자는 본인 것 읽기만 한다.
+
+drop policy if exists "Users can create own search sessions" on public.search_sessions;
+drop policy if exists "Users can update own search sessions" on public.search_sessions;
+drop policy if exists "Users can delete own search sessions" on public.search_sessions;
+
+revoke insert, update, delete on public.search_sessions from authenticated;
+
+
+-- (부가) 사용자별 기록 조회를 빠르게 — 내 검색 기록 화면 대비
+create index if not exists idx_search_sessions_user_created
+on public.search_sessions(user_id, created_at desc);
 
 
 -- =========================================================
