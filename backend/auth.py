@@ -26,6 +26,7 @@ Supabase Auth 가 발급한 JWT 를 FastAPI 가 검증한다.
 
 from __future__ import annotations
 
+import logging
 import os
 from functools import lru_cache
 from typing import Any
@@ -39,6 +40,9 @@ from jwt import PyJWKClient
 AUDIENCE = "authenticated"
 
 _bearer = HTTPBearer(auto_error=False, description="Supabase Auth access token")
+
+# uvicorn 콘솔에 함께 찍히도록 uvicorn 로거를 쓴다
+_log = logging.getLogger("uvicorn.error")
 
 
 class AuthNotConfigured(RuntimeError):
@@ -58,38 +62,61 @@ def _jwks_client() -> PyJWKClient | None:
         return None
 
 
+ASYMMETRIC_ALGS = ("ES256", "RS256")
+
+# 서버 시계가 Supabase 보다 몇 초 늦으면 막 발급된 토큰의 iat 가 "미래"로 보여
+# ImmatureSignatureError 가 난다. 로그인 직후마다 튕기는 증상이 되므로 여유를 둔다.
+CLOCK_LEEWAY_SECONDS = 30
+
+
 def _decode(token: str) -> dict[str, Any]:
-    """서명·만료·audience 를 검증하고 payload 를 돌려준다."""
+    """서명·만료·audience 를 검증하고 payload 를 돌려준다.
+
+    검증 경로는 토큰 헤더의 alg 로 고른다. JWKS 가 있다고 해서 토큰이 비대칭
+    서명이라는 보장은 없다 — 새 키가 standby 인 프로젝트는 공개키를 JWKS 에
+    미리 올려 두고도 실제 토큰은 아직 구형 HS256 으로 서명한다. JWKS 부터
+    무조건 시도하면 그 토큰은 전부 "키를 찾을 수 없음"으로 거절된다.
+    """
     options = {"verify_aud": True, "require": ["exp", "sub"]}
+    alg = jwt.get_unverified_header(token).get("alg")
 
-    # ① 비대칭 — 신형 Supabase 기본값
-    client = _jwks_client()
-    if client is not None:
-        try:
-            signing_key = client.get_signing_key_from_jwt(token)
-            return jwt.decode(
-                token,
-                signing_key.key,
-                algorithms=["ES256", "RS256"],
-                audience=AUDIENCE,
-                options=options,
+    # ① 비대칭 (ES256 / RS256) — SUPABASE_URL 의 JWKS 공개키로 검증
+    if alg in ASYMMETRIC_ALGS:
+        client = _jwks_client()
+        if client is None:
+            raise AuthNotConfigured(
+                f"{alg} 토큰을 검증하려면 SUPABASE_URL 이 필요합니다 (JWKS 공개키 조회)."
             )
-        except jwt.PyJWTError:
-            raise
-        except Exception:  # noqa: BLE001 — JWKS 를 못 받으면 ②로 내려간다
-            pass
-
-    # ② 대칭 — 구형 프로젝트
-    secret = os.getenv("SUPABASE_JWT_SECRET", "").strip()
-    if secret:
+        signing_key = client.get_signing_key_from_jwt(token)
         return jwt.decode(
-            token, secret, algorithms=["HS256"], audience=AUDIENCE, options=options
+            token,
+            signing_key.key,
+            algorithms=list(ASYMMETRIC_ALGS),
+            audience=AUDIENCE,
+            options=options,
+            leeway=CLOCK_LEEWAY_SECONDS,
         )
 
-    raise AuthNotConfigured(
-        "JWT 검증 수단이 없습니다. SUPABASE_URL(비대칭) 또는 "
-        "SUPABASE_JWT_SECRET(대칭) 중 하나를 .env 에 설정하세요."
-    )
+    # ② 대칭 (HS256) — 구형 방식. 대시보드의 Legacy JWT Secret 이 필요하다
+    if alg == "HS256":
+        secret = os.getenv("SUPABASE_JWT_SECRET", "").strip()
+        if not secret:
+            raise AuthNotConfigured(
+                "이 Supabase 프로젝트는 로그인 토큰을 HS256(구형)으로 서명합니다. "
+                "대시보드 → Project Settings → JWT Keys 의 Legacy JWT Secret 을 "
+                ".env 의 SUPABASE_JWT_SECRET 에 넣거나, JWT Keys 에서 비대칭 키로 "
+                "전환(rotate)하세요."
+            )
+        return jwt.decode(
+            token,
+            secret,
+            algorithms=["HS256"],
+            audience=AUDIENCE,
+            options=options,
+            leeway=CLOCK_LEEWAY_SECONDS,
+        )
+
+    raise jwt.InvalidAlgorithmError(f"지원하지 않는 서명 방식입니다: {alg}")
 
 
 class CurrentUser:
@@ -135,6 +162,17 @@ def require_user(
             headers={"WWW-Authenticate": "Bearer"},
         ) from exc
     except jwt.PyJWTError as exc:
+        # 화면에는 뭉뚱그린 문구만 주되, 원인은 서버 로그에 남긴다 — 이게 없으면
+        # "로그인할 때마다 튕긴다"의 이유(키 불일치·시계·audience)를 알 방법이 없다.
+        # 토큰 원문은 찍지 않는다. 헤더(alg·kid)만으로 원인 구분에 충분하다.
+        try:
+            header = jwt.get_unverified_header(token)
+        except jwt.PyJWTError:
+            header = {}
+        _log.warning(
+            "로그인 토큰 검증 실패: %s: %s (alg=%s, kid=%s)",
+            type(exc).__name__, exc, header.get("alg"), header.get("kid"),
+        )
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="로그인 정보를 확인할 수 없습니다.",

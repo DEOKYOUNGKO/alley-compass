@@ -3,7 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { ReactNode } from "react";
 
 import { redirectErrorMessage } from "./authErrors";
-import { authRedirect, supabase } from "./supabase";
+import { authRedirect, stripEmptyHash, supabase } from "./supabase";
 
 /* ──────────────────────────────────────────────────────────────
  * 로그인 상태.
@@ -53,8 +53,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     let cancelled = false;
 
+    // getSession 은 URL 의 토큰 처리(detectSessionInUrl)가 끝난 뒤에 돌아온다.
+    // 그때 Supabase 가 남긴 빈 "#" 을 지운다.
     supabase.auth.getSession().then(({ data }) => {
       if (cancelled) return;
+      stripEmptyHash();
       setSession(data.session);
       setReady(true);
     });
@@ -64,6 +67,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // PKCE 흐름에서는 URL 에 type=recovery 가 없어서 이 이벤트로만 알 수 있다
       if (event === "PASSWORD_RECOVERY") setRecovering(true);
       if (event === "SIGNED_OUT") setRecovering(false);
+      stripEmptyHash();
       setSession(next);
       setReady(true);
     });

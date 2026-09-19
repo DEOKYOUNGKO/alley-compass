@@ -64,6 +64,19 @@ function readAuthRedirect(): AuthRedirect {
 
 export const authRedirect: AuthRedirect = readAuthRedirect();
 
+/**
+ * 주소 끝에 남은 빈 `#` 을 지운다.
+ *
+ * Supabase 는 URL 의 토큰 조각을 세션으로 바꾼 뒤 `window.location.hash = ''` 로
+ * 지우는데, 이 방식은 `http://localhost:5173/#` 처럼 `#` 한 글자를 남긴다.
+ * 세션 처리가 끝난 뒤에 불러야 한다 — 먼저 지우면 토큰을 읽기 전에 사라진다.
+ */
+export function stripEmptyHash(): void {
+  if (typeof window === "undefined") return;
+  if (window.location.hash !== "" || !window.location.href.endsWith("#")) return;
+  window.history.replaceState(window.history.state, "", `${window.location.pathname}${window.location.search}`);
+}
+
 /** 메일 링크·소셜 로그인이 돌아올 주소. Supabase 대시보드의
  *  Authentication → URL Configuration → Redirect URLs 에 등록돼 있어야 한다. */
 export const AUTH_REDIRECT_URL =
