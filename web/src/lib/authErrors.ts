@@ -27,6 +27,10 @@ export function authErrorMessage(message: string): string {
   if (m.includes("rate limit") || m.includes("too many") || m.includes("for security purposes"))
     return "요청이 너무 잦습니다. 잠시 후 다시 시도해 주세요.";
   if (m.includes("provider is not enabled")) return "이 소셜 로그인은 아직 사용할 수 없습니다.";
+  // 카카오는 비즈 앱이 아니면 이메일 동의항목을 받을 수 없다. Supabase 의
+  // "Allow users without an email" 이 꺼져 있으면 이 오류로 돌아온다.
+  if (m.includes("error getting user email from external provider"))
+    return "소셜 계정에서 이메일을 받지 못했습니다. 이메일 제공에 동의했는지 확인해 주세요.";
   if (m.includes("email link is invalid or has expired"))
     return "링크가 만료됐거나 이미 사용됐습니다. 메일을 다시 받아 주세요.";
   if (m.includes("failed to fetch") || m.includes("networkerror"))
