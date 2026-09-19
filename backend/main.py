@@ -45,7 +45,6 @@ from verification_tools import ToolError, get_supabase_client, load_feature_fram
 
 from auth import CurrentUser, require_user  # noqa: E402
 from detail import build_detail  # noqa: E402
-from report import build_report_pdf  # noqa: E402
 
 from schemas import (  # noqa: E402
     AgentRequest,
@@ -338,6 +337,21 @@ def report(req: ReportRequest, _user: CurrentUser = Depends(require_user)) -> Re
     이유다. 개별 상권에서 Claude 호출이 실패해도 그 상권만 오류를 표시하고
     나머지는 계속 진행한다(전체 리포트가 한 상권 때문에 실패하지 않도록).
     """
+    # report.py 는 WeasyPrint 를 import 하고, WeasyPrint 는 그 순간 Pango/GTK
+    # 시스템 라이브러리를 불러온다. 모듈 맨 위에서 import 하면 이 라이브러리가
+    # 없는 PC(Windows 기본 상태)에서 서버 전체가 뜨지 못한다. PDF 는 부가 기능이라
+    # 여기서만 불러오고, Claude 를 부르기 전에 확인해 과금 후 실패하는 일을 막는다.
+    try:
+        from report import build_report_pdf
+    except (ImportError, OSError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "PDF 생성 라이브러리(WeasyPrint)를 불러올 수 없습니다. "
+                "backend/README.md 의 설치 안내를 확인하세요."
+            ),
+        ) from exc
+
     df = get_frame()
     try:
         ranked, as_of = rank_districts(df, req.business_code, age=req.age, character=req.character, priority=req.priority)

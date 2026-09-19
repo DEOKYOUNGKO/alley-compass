@@ -66,6 +66,23 @@ brew install pango   # cairo/glib/harfbuzz 등 의존성도 같이 설치됨
 설치만 하면 된다 — `report.py`가 macOS에서 `DYLD_LIBRARY_PATH`를 자동으로
 맞춰준다(Linux 서버 배포 시에는 이 문제 자체가 거의 없다).
 
+### Windows에서 PDF가 안 만들어질 때 (WeasyPrint)
+
+`pip install weasyprint`만으로는 부족하다. Pango(GTK) 라이브러리가 따로 필요하고,
+없으면 `cannot load library 'libgobject-2.0-0'` 오류가 난다.
+
+1. https://www.msys2.org 에서 MSYS2를 설치한다.
+2. MSYS2 터미널에서 `pacman -S mingw-w64-x86_64-pango`
+3. 백엔드를 띄우는 터미널에서 DLL 경로를 알려준다.
+   ```bat
+   set WEASYPRINT_DLL_DIRECTORIES=C:\msys64\mingw64\bin
+   uvicorn main:app --reload --port 8000
+   ```
+
+설치하지 않아도 서버는 뜬다. WeasyPrint는 `/report`를 호출할 때만 불러오고,
+불러오지 못하면 그 요청만 503과 안내 문구를 돌려준다(Claude를 부르기 전에
+확인하므로 과금되지 않는다).
+
 ## 모델 버전
 
 `/rank`는 아직 LightGBM이 아니라 `scoring.py`의 휴리스틱 Score를 쓴다.
