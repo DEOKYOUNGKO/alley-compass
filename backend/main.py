@@ -95,7 +95,22 @@ def get_frame(refresh: bool = False) -> pd.DataFrame:
     """
     global _FRAME_CACHE
     if _FRAME_CACHE is None or refresh:
-        _FRAME_CACHE = load_feature_frame(use_supabase=_USE_SUPABASE)
+        try:
+            _FRAME_CACHE = load_feature_frame(use_supabase=_USE_SUPABASE)
+        except ToolError as exc:
+            # 데이터가 아직 없는 상태(ETL 미실행 · Supabase 미적재)를 500 으로 두면
+            # CORS 헤더도 빠져서 브라우저는 원인 문구를 읽지 못한다. 503 + 사유로 돌려
+            # 화면이 무엇을 해야 하는지 그대로 보여주게 한다.
+            source = "Supabase district_features" if _USE_SUPABASE else "로컬 CSV"
+            log(f"district_features 로드 실패 ({source}): {exc}")
+            raise HTTPException(
+                status_code=503,
+                detail=(
+                    f"분석할 상권 데이터가 아직 없습니다({source}). "
+                    "alley_compass_etl.py 로 데이터를 수집하거나, 데이터가 올라간 Supabase 를 쓰려면 "
+                    ".env 에 BACKEND_USE_SUPABASE=true 를 설정하세요."
+                ),
+            ) from exc
         log(f"district_features 로드: {len(_FRAME_CACHE):,}행 (source={'supabase' if _USE_SUPABASE else 'csv'})")
     return _FRAME_CACHE
 
