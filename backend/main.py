@@ -33,16 +33,20 @@ sys.path.insert(0, str(ETL_DIR))
 import anthropic  # noqa: E402
 import pandas as pd  # noqa: E402
 from dotenv import load_dotenv  # noqa: E402
-from fastapi import FastAPI, HTTPException  # noqa: E402
+from fastapi import Depends, FastAPI, HTTPException  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 
 from fact_sheet import build_fact_sheet  # noqa: E402
 from narrative_agents import DEFAULT_MODEL, generate_recommendation, generate_risk, verify_and_correct  # noqa: E402
 from verification_tools import ToolError, get_supabase_client, load_feature_frame, log  # noqa: E402
 
+from auth import CurrentUser, require_user  # noqa: E402
+from detail import build_detail  # noqa: E402
+
 from schemas import (  # noqa: E402
     AgentRequest,
     AgentResponse,
+    DetailResponse,
     DistrictScore,
     RankRequest,
     RankResponse,
@@ -57,11 +61,20 @@ app = FastAPI(
     description="서울 골목상권을 조건 기반으로 탐색·랭킹·검증하는 백엔드 (PRD §19)",
     version="0.1.0",
 )
+# 로그인 이후로는 Authorization 헤더가 오간다. 출처를 명시적으로 제한한다 —
+# 기본값을 "*" 로 두면 배포할 때 그대로 나가기 쉽다.
+CORS_ORIGINS = [
+    o.strip()
+    for o in os.getenv("CORS_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",")
+    if o.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=os.getenv("CORS_ORIGINS", "*").split(","),
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=CORS_ORIGINS,
+    allow_credentials=True,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 _FRAME_CACHE: pd.DataFrame | None = None
@@ -91,7 +104,13 @@ def _condition_text(req: RankRequest | AgentRequest) -> str:
     return f"{budget_part}타깃 {age_label} · 상권 성격: {character_label} · 우선순위: {priority_label}"
 
 
-def _persist_run(req: RankRequest, ranked: pd.DataFrame, business_name: str, elapsed_ms: int) -> str | None:
+def _persist_run(
+    req: RankRequest,
+    ranked: pd.DataFrame,
+    business_name: str,
+    elapsed_ms: int,
+    user_id: str,
+) -> str | None:
     """Supabase에 search_sessions/recommendation_runs/recommendations를 기록한다.
 
     실패해도 /rank 응답 자체는 막지 않는다 — 기록은 부가 기능이지 핵심 경로가
@@ -108,6 +127,7 @@ def _persist_run(req: RankRequest, ranked: pd.DataFrame, business_name: str, ela
         session = (
             supabase.table("search_sessions")
             .insert({
+                "user_id": user_id,
                 "business_type_id": business_type_id,
                 "budget": req.budget,
                 "target_age": req.age,
@@ -164,14 +184,17 @@ def health() -> dict:
 
 
 @app.get("/business-types")
-def business_types() -> list[dict]:
+def business_types(_user: CurrentUser = Depends(require_user)) -> list[dict]:
     df = get_frame()
     rows = df[["business_code", "business_name"]].dropna().drop_duplicates().sort_values("business_name")
     return rows.to_dict(orient="records")
 
 
 @app.get("/districts")
-def districts(business_code: str | None = None) -> list[dict]:
+def districts(
+    business_code: str | None = None,
+    _user: CurrentUser = Depends(require_user),
+) -> list[dict]:
     df = get_frame()
     scope = df if business_code is None else df[df["business_code"] == business_code]
     rows = scope[["district_code", "district_name"]].dropna().drop_duplicates().sort_values("district_code")
@@ -179,7 +202,7 @@ def districts(business_code: str | None = None) -> list[dict]:
 
 
 @app.post("/rank", response_model=RankResponse)
-def rank(req: RankRequest) -> RankResponse:
+def rank(req: RankRequest, user: CurrentUser = Depends(require_user)) -> RankResponse:
     """PRD §16 개인화 Ranking. 서울 전체(해당 업종 데이터가 있는 상권 전부)를 재랭킹한다."""
     df = get_frame()
     started = time.monotonic()
@@ -190,7 +213,7 @@ def rank(req: RankRequest) -> RankResponse:
     elapsed_ms = int((time.monotonic() - started) * 1000)
 
     business_name = df.loc[df["business_code"] == req.business_code, "business_name"].iloc[0]
-    run_id = _persist_run(req, ranked, business_name, elapsed_ms)
+    run_id = _persist_run(req, ranked, business_name, elapsed_ms, user.user_id)
 
     missing = ranked.attrs.get("missing_components", [])
     label = {"perf": "매출 성장률", "stability": "폐업 추세", "access": "교통·집객 접근성", "comp": "경쟁강도", "demand": "수요"}
@@ -220,8 +243,31 @@ def rank(req: RankRequest) -> RankResponse:
     )
 
 
+@app.get("/districts/{district_code}/detail", response_model=DetailResponse)
+def district_detail(
+    district_code: str,
+    business_code: str,
+    _user: CurrentUser = Depends(require_user),
+) -> DetailResponse:
+    """PRD §17.4 상세 Drawer 가 쓰는 상권 진단 4영역 + 시계열.
+
+    /agents 와 달리 Claude 를 호출하지 않는다 — 전부 Pandas 집계라 과금이
+    없고, 그래서 상권을 열 때마다 바로 불러도 된다. 백분위 정의는
+    verification_tools.percentile() 을 그대로 쓴다.
+    """
+    df = get_frame()
+    try:
+        return DetailResponse(**build_detail(df, district_code, business_code))
+    except ToolError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @app.post("/districts/{district_code}/agents", response_model=AgentResponse)
-def district_agents(district_code: str, req: AgentRequest) -> AgentResponse:
+def district_agents(
+    district_code: str,
+    req: AgentRequest,
+    _user: CurrentUser = Depends(require_user),
+) -> AgentResponse:
     """PRD §10 Recommendation/Risk/Verification Agent 체인.
 
     Claude API를 실제로 호출하므로 과금이 발생한다 — /rank와 분리된 별도

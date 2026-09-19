@@ -1,0 +1,220 @@
+/* ──────────────────────────────────────────────────────────────
+ * 2계층 · 의미 토큰 (Semantic Tokens)
+ *
+ * "무슨 색인가"가 아니라 "무슨 역할인가"로 이름을 붙인다.
+ * 컴포넌트는 이 토큰만 쓴다 — surface/border/text/accent …
+ *
+ * 테마 전환은 여기 값만 바꾼다. 세 가지 상태를 모두 정의한다.
+ *   1. :root                      라이트 (기본값 · 모든 토큰이 여기 다 있다)
+ *   2. prefers-color-scheme: dark  OS 다크 (단, 사용자가 라이트를 고르면 무시)
+ *   3. [data-theme="dark"]         사용자가 직접 고른 다크
+ *
+ * 규칙: 어떤 토큰도 다크 블록에만 존재해선 안 된다. 라이트에 없는 토큰이
+ * 다크에만 있으면 라이트 화면에서 색이 통째로 비어 렌더된다.
+ * ────────────────────────────────────────────────────────────── */
+
+:root {
+  /* ── 배경면 ──────────────────────────────────────── */
+  --bg:             var(--gray-50);    /* 페이지 바닥 */
+  --surface:        var(--gray-0);     /* 카드·패널 */
+  --surface-sunken: var(--gray-25);    /* 표 헤더·입력 내부 */
+  --surface-raised: var(--gray-0);     /* 드로어·팝오버 (그림자로 띄움) */
+  --surface-inverse: var(--gray-900);
+
+  /* ── 경계선 ──────────────────────────────────────── */
+  --border:        var(--gray-200);
+  --border-subtle: var(--gray-100);
+  --border-strong: var(--gray-300);
+
+  /* ── 전경(글자) — Tailwind의 --text-* 네임스페이스와 충돌을 피해 fg로 둔다 ────────────────────────────────────────── */
+  --fg:         var(--gray-900);  /* 제목·수치 */
+  --fg-body:    var(--gray-700);  /* 본문 */
+  --fg-muted:   var(--gray-500);  /* 보조 설명 */
+  --fg-subtle:  var(--gray-400);  /* 라벨·단위 */
+  --fg-inverse: var(--gray-0);
+
+  /* ── 강조 (브랜드·선택·포커스) ───────────────────── */
+  --accent:          var(--teal-500);
+  --accent-hover:    var(--teal-600);
+  --accent-active:   var(--teal-700);
+  --accent-fg:       var(--gray-0);    /* 강조면 위 글자 */
+  --accent-subtle:   var(--teal-50);   /* 선택된 행 배경 */
+  --accent-border:   var(--teal-200);
+  --accent-text:     var(--teal-600);  /* 흰 배경 위 강조 글자 */
+
+  /* ── 의미색 · 긍정 (추천 근거·안정) ──────────────── */
+  --positive:        var(--moss-500);
+  --positive-subtle: var(--moss-100);
+  --positive-border: var(--moss-200);
+  --positive-text:   var(--moss-600);
+
+  /* ── 의미색 · 주의 (검증 반려·미검증) ───────────── */
+  --caution:        var(--amber-500);
+  --caution-subtle: var(--amber-100);
+  --caution-border: var(--amber-200);
+  --caution-text:   var(--amber-600);
+
+  /* ── 의미색 · 부정 (반대 근거·위험) ─────────────── */
+  --negative:        var(--rust-500);
+  --negative-subtle: var(--rust-100);
+  --negative-border: var(--rust-200);
+  --negative-text:   var(--rust-600);
+
+  /* ── 데이터 없음 (이 서비스의 1급 상태) ──────────
+   * "모른다"를 회색으로 죽이지 않고 고유한 표현을 준다.
+   * 없는 데이터를 지어내지 않는 것이 설계 원칙이라 화면에 자주 등장한다. */
+  --nodata:        var(--gray-400);
+  --nodata-subtle: var(--gray-50);
+  --nodata-border: var(--gray-200);
+
+  /* ── Score 신호 (생존 안정성 0~100) ──────────────
+   * 75 이상 / 60 이상 / 미만. 강조색과 분리해 둔다 —
+   * 브랜드색을 바꿔도 점수 판독 기준은 흔들리면 안 된다. */
+  --score-high: var(--moss-500);
+  --score-mid:  var(--teal-400);
+  --score-low:  var(--rust-500);
+
+  /* ── 포커스 링 (접근성 · 절대 없애지 않는다) ─────── */
+  --focus-ring: var(--teal-400);
+
+  /* ── 그림자 ──────────────────────────────────────── */
+  --elevation-sm: 0 1px 2px rgb(12 21 19 / 0.06);
+  --elevation-md: 0 1px 2px rgb(12 21 19 / 0.05), 0 4px 12px -4px rgb(12 21 19 / 0.12);
+  --elevation-lg: 0 2px 4px rgb(12 21 19 / 0.06), 0 16px 40px -12px rgb(12 21 19 / 0.28);
+
+  /* ── 소셜 로그인 버튼 — 카카오·구글 디자인 가이드가 색을 지정한다 ── */
+  --kakao:         var(--kakao-yellow);
+  --kakao-fg:      rgb(0 0 0 / 0.85);
+  --google:        var(--google-white);
+  --google-fg:     var(--google-ink);
+  --google-border: var(--google-stroke);
+
+  color-scheme: light;
+}
+
+/* ── OS 다크 (사용자가 명시적으로 라이트를 고르지 않은 경우) ── */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg:             var(--gray-950);
+    --surface:        var(--gray-900);
+    --surface-sunken: #111d1a;
+    --surface-raised: var(--gray-800);
+    --surface-inverse: var(--gray-50);
+
+    --border:        #2b3a35;
+    --border-subtle: #1e2c28;
+    --border-strong: #3d504a;
+
+    --fg:         var(--gray-50);
+    --fg-body:    var(--gray-200);
+    --fg-muted:   var(--gray-400);
+    --fg-subtle:  var(--gray-500);
+    --fg-inverse: var(--gray-950);
+
+    --accent:        var(--teal-300);
+    --accent-hover:  var(--teal-200);
+    --accent-active: var(--teal-100);
+    --accent-fg:     var(--teal-900);
+    --accent-subtle: var(--teal-800);
+    --accent-border: var(--teal-600);
+    --accent-text:   var(--teal-200);
+
+    --positive:        var(--moss-400);
+    --positive-subtle: var(--moss-800);
+    --positive-border: var(--moss-600);
+    --positive-text:   var(--moss-200);
+
+    --caution:        var(--amber-400);
+    --caution-subtle: var(--amber-800);
+    --caution-border: var(--amber-600);
+    --caution-text:   var(--amber-200);
+
+    --negative:        var(--rust-400);
+    --negative-subtle: var(--rust-800);
+    --negative-border: var(--rust-600);
+    --negative-text:   var(--rust-200);
+
+    --nodata:        var(--gray-500);
+    --nodata-subtle: #131f1c;
+    --nodata-border: #2b3a35;
+
+    --score-high: var(--moss-400);
+    --score-mid:  var(--teal-300);
+    --score-low:  var(--rust-400);
+
+    --focus-ring: var(--teal-300);
+
+    --elevation-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+    --elevation-md: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 12px -4px rgb(0 0 0 / 0.5);
+    --elevation-lg: 0 2px 4px rgb(0 0 0 / 0.4), 0 16px 40px -12px rgb(0 0 0 / 0.7);
+
+    /* 카카오는 다크에서도 같은 노랑이다. 구글만 다크 버전이 따로 있다. */
+    --google:        var(--google-night);
+    --google-fg:     var(--google-night-ink);
+    --google-border: var(--google-night-line);
+
+    color-scheme: dark;
+  }
+}
+
+/* ── 사용자가 직접 고른 다크 (OS가 라이트여도 이긴다) ── */
+:root[data-theme="dark"] {
+  --bg:             var(--gray-950);
+  --surface:        var(--gray-900);
+  --surface-sunken: #111d1a;
+  --surface-raised: var(--gray-800);
+  --surface-inverse: var(--gray-50);
+
+  --border:        #2b3a35;
+  --border-subtle: #1e2c28;
+  --border-strong: #3d504a;
+
+  --fg:         var(--gray-50);
+  --fg-body:    var(--gray-200);
+  --fg-muted:   var(--gray-400);
+  --fg-subtle:  var(--gray-500);
+  --fg-inverse: var(--gray-950);
+
+  --accent:        var(--teal-300);
+  --accent-hover:  var(--teal-200);
+  --accent-active: var(--teal-100);
+  --accent-fg:     var(--teal-900);
+  --accent-subtle: var(--teal-800);
+  --accent-border: var(--teal-600);
+  --accent-text:   var(--teal-200);
+
+  --positive:        var(--moss-400);
+  --positive-subtle: var(--moss-800);
+  --positive-border: var(--moss-600);
+  --positive-text:   var(--moss-200);
+
+  --caution:        var(--amber-400);
+  --caution-subtle: var(--amber-800);
+  --caution-border: var(--amber-600);
+  --caution-text:   var(--amber-200);
+
+  --negative:        var(--rust-400);
+  --negative-subtle: var(--rust-800);
+  --negative-border: var(--rust-600);
+  --negative-text:   var(--rust-200);
+
+  --nodata:        var(--gray-500);
+  --nodata-subtle: #131f1c;
+  --nodata-border: #2b3a35;
+
+  --score-high: var(--moss-400);
+  --score-mid:  var(--teal-300);
+  --score-low:  var(--rust-400);
+
+  --focus-ring: var(--teal-300);
+
+  --elevation-sm: 0 1px 2px rgb(0 0 0 / 0.4);
+  --elevation-md: 0 1px 2px rgb(0 0 0 / 0.3), 0 4px 12px -4px rgb(0 0 0 / 0.5);
+  --elevation-lg: 0 2px 4px rgb(0 0 0 / 0.4), 0 16px 40px -12px rgb(0 0 0 / 0.7);
+
+  --google:        var(--google-night);
+  --google-fg:     var(--google-night-ink);
+  --google-border: var(--google-night-line);
+
+  color-scheme: dark;
+}

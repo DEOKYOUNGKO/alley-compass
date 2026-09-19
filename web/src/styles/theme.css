@@ -1,0 +1,148 @@
+/* ──────────────────────────────────────────────────────────────
+ * 3계층 · Tailwind 노출 (Theme Bridge)
+ *
+ * 2계층 의미 토큰을 Tailwind 유틸리티로 꺼내 쓸 수 있게 등록한다.
+ *   --color-surface  →  bg-surface / text-surface / border-surface …
+ *
+ * `@theme inline` 이 핵심이다. inline이 없으면 Tailwind가 선언 시점의
+ * 값을 복사해 버려서 다크모드에서 값이 안 바뀐다. inline이면 유틸리티가
+ * var(--surface)를 그대로 참조하므로, 테마 전환이 CSS 변수 교체만으로 끝난다.
+ *
+ * 여기에 새 토큰을 추가하는 순서:
+ *   ① tokens.primitive.css 에 재료를 넣고
+ *   ② tokens.semantic.css 에 역할 이름을 붙이고 (라이트·다크 둘 다!)
+ *   ③ 이 파일에 한 줄 등록한다.
+ * ────────────────────────────────────────────────────────────── */
+
+@theme inline {
+  /* ── 색: 배경·경계·글자 ─────────────────────────── */
+  --color-bg:              var(--bg);
+  --color-surface:         var(--surface);
+  --color-surface-sunken:  var(--surface-sunken);
+  --color-surface-raised:  var(--surface-raised);
+  --color-surface-inverse: var(--surface-inverse);
+
+  --color-border:        var(--border);
+  --color-border-subtle: var(--border-subtle);
+  --color-border-strong: var(--border-strong);
+
+  --color-fg:         var(--fg);
+  --color-fg-body:    var(--fg-body);
+  --color-fg-muted:   var(--fg-muted);
+  --color-fg-subtle:  var(--fg-subtle);
+  --color-fg-inverse: var(--fg-inverse);
+
+  /* ── 색: 강조 ────────────────────────────────────── */
+  --color-accent:        var(--accent);
+  --color-accent-hover:  var(--accent-hover);
+  --color-accent-active: var(--accent-active);
+  --color-accent-fg:     var(--accent-fg);
+  --color-accent-subtle: var(--accent-subtle);
+  --color-accent-border: var(--accent-border);
+  --color-accent-text:   var(--accent-text);
+
+  /* ── 색: 의미 ────────────────────────────────────── */
+  --color-positive:        var(--positive);
+  --color-positive-subtle: var(--positive-subtle);
+  --color-positive-border: var(--positive-border);
+  --color-positive-text:   var(--positive-text);
+
+  --color-caution:        var(--caution);
+  --color-caution-subtle: var(--caution-subtle);
+  --color-caution-border: var(--caution-border);
+  --color-caution-text:   var(--caution-text);
+
+  --color-negative:        var(--negative);
+  --color-negative-subtle: var(--negative-subtle);
+  --color-negative-border: var(--negative-border);
+  --color-negative-text:   var(--negative-text);
+
+  --color-nodata:        var(--nodata);
+  --color-nodata-subtle: var(--nodata-subtle);
+  --color-nodata-border: var(--nodata-border);
+
+  --color-score-high: var(--score-high);
+  --color-score-mid:  var(--score-mid);
+  --color-score-low:  var(--score-low);
+
+  --color-focus: var(--focus-ring);
+
+  --color-kakao:         var(--kakao);
+  --color-kakao-fg:      var(--kakao-fg);
+  --color-google:        var(--google);
+  --color-google-fg:     var(--google-fg);
+  --color-google-border: var(--google-border);
+
+  /* ── 서체 ────────────────────────────────────────
+   * sans  본문·제목 전부. 한글 자소가 촘촘해 표에서 줄이 덜 흔들린다.
+   * mono  수치·코드·상권_코드 전용. tabular-nums 로 자릿수를 세로 정렬한다. */
+  --font-sans: "IBM Plex Sans KR", system-ui, -apple-system, "Malgun Gothic",
+               "맑은 고딕", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+
+  /* ── 글자 크기 (본문 14px 기준) ─────────────────── */
+  --text-2xs:  var(--size-2xs);
+  --text-2xs--line-height: 1.45;
+  --text-xs:   var(--size-xs);
+  --text-xs--line-height: 1.5;
+  --text-sm:   var(--size-sm);
+  --text-sm--line-height: 1.6;
+  --text-base: var(--size-base);
+  --text-base--line-height: 1.7;
+  --text-md:   var(--size-md);
+  --text-md--line-height: 1.7;
+  --text-lg:   var(--size-lg);
+  --text-lg--line-height: 1.5;
+  --text-xl:   var(--size-xl);
+  --text-xl--line-height: 1.4;
+  --text-2xl:  var(--size-2xl);
+  --text-2xl--line-height: 1.3;
+  --text-3xl:  var(--size-3xl);
+  --text-3xl--line-height: 1.22;
+  --text-4xl:  var(--size-4xl);
+  --text-4xl--line-height: 1.15;
+
+  /* ── 반경 ────────────────────────────────────────
+   * 이 서비스는 표·수치가 주인공이라 전반적으로 각지게 간다.
+   * 둥근 모서리는 "누를 수 있는 것"(버튼·칩·pill)에만 쓴다. */
+  --radius-xs:   0.125rem;
+  --radius-sm:   0.1875rem;
+  --radius-md:   0.25rem;
+  --radius-lg:   0.375rem;
+  --radius-xl:   0.5rem;
+  --radius-2xl:  0.75rem;
+  --radius-full: 9999px;
+
+  /* ── 그림자 ─────────────────────────────────────── */
+  --shadow-xs: var(--elevation-sm);
+  --shadow-sm: var(--elevation-md);
+  --shadow-lg: var(--elevation-lg);
+
+  /* ── 모션 ───────────────────────────────────────── */
+  --ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+  --animate-drawer-in: drawer-in 0.26s var(--ease-out-quart);
+  --animate-scrim-in:  scrim-in 0.2s ease-out;
+  --animate-pop-in:    pop-in 0.14s var(--ease-out-quart);
+}
+
+@keyframes drawer-in {
+  from { transform: translateX(16px); opacity: 0; }
+  to   { transform: translateX(0);    opacity: 1; }
+}
+@keyframes scrim-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+@keyframes pop-in {
+  from { transform: scale(0.97); opacity: 0; }
+  to   { transform: scale(1);    opacity: 1; }
+}
+
+/* 사용자가 직접 고르는 다크 토글과 OS 설정을 모두 존중하는 dark: 변형.
+ * Tailwind 기본값은 OS만 보거나 클래스만 보므로 직접 정의한다. */
+@custom-variant dark {
+  &:where([data-theme="dark"], [data-theme="dark"] *) { @slot; }
+  @media (prefers-color-scheme: dark) {
+    &:where(:not([data-theme="light"]) *, :not([data-theme="light"])) { @slot; }
+  }
+}

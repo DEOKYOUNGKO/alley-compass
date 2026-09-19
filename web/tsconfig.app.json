@@ -1,0 +1,33 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "types": ["vite/client"],
+
+    /* 번들러가 트랜스파일하므로 tsc는 타입 검사만 한다 */
+    // node_modules 의 타입까지 검사하지 않는다. 라이브러리가 배포한 .d.ts 는
+    // 우리가 고칠 수 없고, 실제로 @supabase/auth-js 의 WebAuthn 타입이
+    // TypeScript 7 의 lib.dom 과 충돌한다. 우리 코드는 그대로 다 검사한다.
+    "skipLibCheck": true,
+    "noEmit": true,
+    "isolatedModules": true,
+    "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "moduleDetection": "force",
+
+    /* 느슨한 구멍을 남기지 않는다 — 백엔드 응답을 다루는 코드가 많아
+       undefined 유입을 타입 단계에서 막는 편이 비용이 싸다 */
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+
+    // TypeScript 7 은 baseUrl 을 없앴다 — paths 는 이 파일 위치 기준으로 해석된다.
+    "paths": { "@/*": ["./src/*"] }
+  },
+  "include": ["src"]
+}

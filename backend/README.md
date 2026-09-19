@@ -52,3 +52,33 @@ http://localhost:8000/docs 에서 Swagger UI로 바로 테스트 가능.
 `/rank` 호출은 Supabase가 연결돼 있으면 `search_sessions` /
 `recommendation_runs` / `recommendations`에 결과를 기록한다(PRD §22 Data
 Flywheel). 기록에 실패해도 응답 자체는 막지 않는다 — 부가 기능이다.
+
+---
+
+### `GET /districts/{district_code}/detail?business_code=...`
+
+상세 화면(PRD §17.4)이 쓰는 상권 진단 4영역 + 시계열. 구현은 `detail.py`.
+
+**Claude 를 호출하지 않는다** — 전부 Pandas 집계라 과금이 없고, 그래서 상권을
+열 때마다 바로 불러도 된다. 근거 문장 생성만 `/agents` 로 분리돼 있다.
+
+```
+diagnostics  잠재고객 / 경쟁강도 / 영업환경 / 비용
+series       hourly(시간대별 유동인구) · sales · closure · competition
+```
+
+백분위는 `verification_tools.percentile()` 을 그대로 쓴다. 화면이 "상위 12%"
+라고 말하는데 검증 Tool 이 다르게 판정하면 같은 숫자를 두고 서로 다른 말을
+하게 되므로, 집계는 전부 백엔드에서 하고 프론트는 그리기만 한다.
+
+없는 데이터는 지어내지 않는다.
+
+| 상황 | 응답 |
+|---|---|
+| 분기가 1개뿐 | `series.sales.available=false` + `reason` 에 이유 |
+| 시간대별 컬럼 미수집 | `series.hourly.available=false` |
+| `store_count=0` 또는 배후수요 결측 | 경쟁강도 영역 `available=false`, `series.competition=null` |
+| 임차료·공실률 | 비용 영역은 **항상** `available=false` (데이터셋에 없음) |
+
+`extra_features` 가 JSONB 로 오는 Supabase 경로와 평면 컬럼으로 오는 로컬
+디버그 CSV 경로를 둘 다 읽는다.
