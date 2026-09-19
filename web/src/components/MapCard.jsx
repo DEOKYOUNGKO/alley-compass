@@ -1,85 +1,34 @@
-/* 지도 시각화 (F-10).
+/* 지도 대신 Top 5 스트립 (F-10).
  *
- * ⚠️ 서울 외곽선은 실제 지형이 아니라 도식화된 SVG 패스이고, 핀 좌표(mx/my)도
- * 위경도가 아니다. districts 테이블의 latitude/longitude가 채워지면
- * 실제 지도 API(PRD §19)로 교체한다 — 그때 바꿀 파일은 이것 하나다.
+ * ⚠️ 서울 5종 데이터셋(길단위인구·점포·추정매출·집객시설·직장/상주인구)에는
+ * 상권의 위경도가 없다. 목업 프로토타입 시절엔 화면용 가짜 좌표(mx/my)를
+ * 썼지만, 실제 데이터로 바뀐 지금은 그 좌표가 없어 지도를 그릴 수 없다.
+ * 없는 걸 있는 것처럼 그리지 않고, 실제 순위·점수만 보여주는 스트립으로
+ * 대신한다. districts.latitude/longitude가 채워지면(별도 영역-상권 데이터나
+ * geocoding 필요) 이 파일만 실제 지도로 바꾸면 된다.
  */
-
-const OUTLINE = "M6,14 C22,6 44,4 62,8 C82,12 96,20 95,34 C94,48 82,58 60,58 C40,58 20,54 10,44 C2,36 0,22 6,14 Z";
-const RIVER = "M0,30 C18,24 30,36 46,32 S76,24 100,30 L100,40 C80,44 62,34 46,40 S16,46 0,42 Z";
 
 const shortName = (name) => name.replace(/\(.*\)/, "").split(" ")[0];
 
-export default function MapCard({ districts, top5Codes, selectedCode, onSelect }) {
+export default function MapCard({ ranking, selectedCode, onSelect }) {
   return (
     <div className="mapcard">
-      <svg viewBox="0 0 100 62" role="img" aria-label="서울 골목상권 후보 위치 지도">
-        <path d={OUTLINE} fill="var(--surface-2)" stroke="var(--line)" />
-        <path d={RIVER} fill="var(--brand-tint)" />
-        <text x="4" y="52" fontSize="3.2" fill="var(--muted)" style={{ fontFamily: "'IBM Plex Sans KR',sans-serif" }}>
-          한강
-        </text>
-
-        {districts.map((d) => {
-          const rank = top5Codes.indexOf(d.code);
-          const isSelected = selectedCode === d.code;
-
-          if (rank < 0) {
-            return (
-              <g key={d.code} style={{ cursor: "pointer" }} onClick={() => onSelect(d.code)}>
-                <circle cx={d.mx} cy={d.my} r="1.7" fill="var(--surface)" stroke="var(--muted)" strokeWidth="1" />
-              </g>
-            );
-          }
-
-          return (
-            <g key={d.code} style={{ cursor: "pointer" }} onClick={() => onSelect(d.code)}>
-              <circle
-                cx={d.mx}
-                cy={d.my}
-                r={isSelected ? 4.2 : 3.2}
-                fill="var(--brand)"
-                stroke={isSelected ? "var(--brand-deep)" : "var(--surface)"}
-                strokeWidth={isSelected ? 1.4 : 1}
-              />
-              <text
-                x={d.mx}
-                y={d.my + 1.6}
-                fontSize="3.4"
-                fontWeight="700"
-                fill="#fff"
-                textAnchor="middle"
-                style={{ fontFamily: "'Fraunces',serif" }}
-              >
-                {rank + 1}
-              </text>
-              <text
-                x={d.mx}
-                y={d.my - 4.5}
-                fontSize="3"
-                fill="var(--ink-2)"
-                textAnchor="middle"
-                style={{ fontFamily: "'IBM Plex Sans KR',sans-serif" }}
-              >
-                {shortName(d.name)}
-              </text>
-            </g>
-          );
-        })}
-      </svg>
-
+      <div className="topstrip">
+        {ranking.map((r) => (
+          <button
+            type="button"
+            key={r.district_code}
+            className={`topcard${selectedCode === r.district_code ? " sel" : ""}`}
+            onClick={() => onSelect(r.district_code)}
+          >
+            <span className="tn">{r.rank}</span>
+            <span className="tname">{shortName(r.district_name)}</span>
+            <span className="tscore">{r.final_score}점</span>
+          </button>
+        ))}
+      </div>
       <div className="maplegend">
-        <span>
-          <i style={{ background: "var(--brand)" }} />
-          추천 상위 5곳
-        </span>
-        <span>
-          <i style={{ border: "1.5px solid var(--muted)" }} />그 외 후보
-        </span>
-        <span>
-          <i style={{ background: "var(--brand-tint)" }} />
-          한강
-        </span>
+        <span>지도는 준비 중 — 서울시 5종 데이터셋에 상권 위경도가 없습니다 (알려진 한계, docs/PRD.md 참고)</span>
       </div>
     </div>
   );
