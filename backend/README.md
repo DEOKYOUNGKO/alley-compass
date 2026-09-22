@@ -86,6 +86,16 @@ Python 서버리스 런타임은 `report.py`가 쓰는 WeasyPrint(Pango/Cairo �
 필요하다. `/report`는 그 근거 생성을 Top-K개만큼 자동으로 반복해 PDF로
 묶어주는 것뿐 — 새 판정 로직은 없다(`report.py`는 HTML 렌더링 + PDF 변환만).
 
+### 사용자별 Claude 호출 한도
+
+`/parse-condition`·`/districts/{code}/agents`·`/report`는 로그인한 사용자면
+누구든 부를 수 있어서, `require_user`만으로는 짧은 시간 반복 호출(실수든
+악용이든)을 막지 못한다. `ratelimit.py`가 호출마다 대략적인 크레딧을 매겨
+사용자별 1시간 합이 한도를 넘으면 `429`를 준다. 한도는 `.env`의
+`PARSE_CREDIT_LIMIT_PER_HOUR`(기본 60) / `AGENT_CREDIT_LIMIT_PER_HOUR`(기본
+40)로 조정한다. 메모리 기반이라 프로세스(인스턴스) 하나 안에서만 유효하다 —
+여러 워커로 수평 확장하면 Redis 같은 공유 저장소로 옮겨야 한다.
+
 ### `/report` 사용 예
 
 ```bash

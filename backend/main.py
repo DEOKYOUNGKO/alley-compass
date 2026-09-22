@@ -52,6 +52,12 @@ from verification_tools import (  # noqa: E402
 
 from auth import CurrentUser, require_user  # noqa: E402
 from detail import build_detail  # noqa: E402
+from ratelimit import (  # noqa: E402
+    AGENT_CREDIT_LIMIT_PER_HOUR,
+    PARSE_CREDIT_LIMIT_PER_HOUR,
+    RateLimitExceeded,
+    charge,
+)
 
 from schemas import (  # noqa: E402
     AgentRequest,
@@ -171,6 +177,18 @@ def get_business_types(refresh: bool = False) -> pd.DataFrame:
     return _BUSINESS_TYPES_CACHE
 
 
+def _charge_or_429(bucket: str, user_id: str, credits: int, limit: int) -> None:
+    """ratelimit.charge()를 부르고, 한도 초과면 429로 바꿔 던진다.
+    프론트는 이 문구를 그대로 보여준다(web/src/lib/api.ts의 ApiError)."""
+    try:
+        charge(bucket, user_id, credits, limit)
+    except RateLimitExceeded as exc:
+        raise HTTPException(
+            status_code=429,
+            detail=f"AI 호출이 너무 잦습니다. {exc.retry_after_seconds}초 후 다시 시도해 주세요.",
+        ) from exc
+
+
 def _condition_text(req: RankRequest | AgentRequest | ReportRequest) -> str:
     age_label = {"20": "20대", "30": "30대", "both": "20~30대"}[req.age]
     character_label = {
@@ -268,7 +286,7 @@ def business_types(_user: CurrentUser = Depends(require_user)) -> list[dict]:
 @app.post("/parse-condition", response_model=ParseConditionResponse)
 def parse_condition_endpoint(
     req: ParseConditionRequest,
-    _user: CurrentUser = Depends(require_user),
+    user: CurrentUser = Depends(require_user),
 ) -> ParseConditionResponse:
     """ConditionBar를 대체하는 자연어 입력. PRD F-12 대화형 재탐색.
 
@@ -277,6 +295,7 @@ def parse_condition_endpoint(
     Claude가 뭐라 답하든 실제 수집된 업종 목록으로 다시 확인한다
     (condition_parser.parse_condition 안에서 처리).
     """
+    _charge_or_429("parse", user.user_id, 1, PARSE_CREDIT_LIMIT_PER_HOUR)
     biz_df = get_business_types()
     businesses = biz_df.to_dict(orient="records")
 
@@ -391,13 +410,14 @@ def district_detail(
 def district_agents(
     district_code: str,
     req: AgentRequest,
-    _user: CurrentUser = Depends(require_user),
+    user: CurrentUser = Depends(require_user),
 ) -> AgentResponse:
     """PRD §10 Recommendation/Risk/Verification Agent 체인.
 
     Claude API를 실제로 호출하므로 과금이 발생한다 — /rank와 분리된 별도
     엔드포인트로 둔 이유다.
     """
+    _charge_or_429("agent", user.user_id, 2, AGENT_CREDIT_LIMIT_PER_HOUR)
     df = get_frame()
     biz_rows = df[df["business_code"] == req.business_code]
     row = biz_rows[biz_rows["district_code"] == str(district_code)]
@@ -450,7 +470,7 @@ def district_agents(
 
 
 @app.post("/report")
-def report(req: ReportRequest, _user: CurrentUser = Depends(require_user)) -> Response:
+def report(req: ReportRequest, user: CurrentUser = Depends(require_user)) -> Response:
     """PRD F-15. Top-K 상권 + 각 상권의 추천/반대 근거를 PDF 한 장으로 묶는다.
 
     상권마다 Recommendation + Risk Agent를 호출하므로(최대 10곳 x 2회) 응답까지
@@ -458,6 +478,11 @@ def report(req: ReportRequest, _user: CurrentUser = Depends(require_user)) -> Re
     이유다. 개별 상권에서 Claude 호출이 실패해도 그 상권만 오류를 표시하고
     나머지는 계속 진행한다(전체 리포트가 한 상권 때문에 실패하지 않도록).
     """
+    # top_k 만큼 agents 를 반복 호출하는 것과 같은 비용이라 크레딧도 그만큼 문다.
+    # WeasyPrint 를 확인하기 전에 먼저 검사한다 — 한도를 넘겼는데 "PDF 라이브러리가
+    # 없다"는 무관한 오류부터 보이면 진짜 원인을 못 찾는다.
+    _charge_or_429("agent", user.user_id, req.top_k * 2, AGENT_CREDIT_LIMIT_PER_HOUR)
+
     # report.py 는 WeasyPrint 를 import 하고, WeasyPrint 는 그 순간 Pango/GTK
     # 시스템 라이브러리를 불러온다. 모듈 맨 위에서 import 하면 이 라이브러리가
     # 없는 PC(Windows 기본 상태)에서 서버 전체가 뜨지 못한다. PDF 는 부가 기능이라
