@@ -6,12 +6,24 @@ verification_tools.py)을 그대로 재사용하는 FastAPI 백엔드. 새 판�
 
 ## 실행
 
+conda 없이 표준 `venv`로 실행한다. 가상환경은 저장소 루트에 하나만 만들면 된다 —
+`backend/main.py`가 `alley_compass_etl` 모듈을 그대로 import하므로, `backend/`
+것만 설치하면 `ModuleNotFoundError`가 난다. 두 `requirements.txt`를 함께 설치한다.
+
 ```bash
-conda activate alleycompass
+# 저장소 루트에서
+python3 -m venv .venv
+source .venv/bin/activate        # Windows는 .venv\Scripts\activate
+
+pip install -r backend/requirements.txt -r alley_compass_etl/requirements.txt
+
 cd backend
-pip install -r requirements.txt   # alleycompass 환경엔 이미 다 있을 것
+cp ../alley_compass_etl/.env.example ../alley_compass_etl/.env   # 처음 한 번, 값 채우기
 uvicorn main:app --reload --port 8000
 ```
+
+다음부터 백엔드만 다시 띄울 때는 가상환경 활성화 후 `cd backend && uvicorn main:app
+--reload --port 8000`이면 된다.
 
 기본은 로컬 CSV(`alley_compass_etl/data/processed/district_features_debug.csv`)를
 읽는다. Supabase로 전환하려면 `alley_compass_etl/.env`에
