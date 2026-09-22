@@ -138,6 +138,13 @@ export default function App() {
   const [history, setHistory] = useState<HistoryEntry[]>([]);
 
   const messageId = useRef(0);
+  /** /rank 요청 번호표. 조건을 빠르게 여러 번 바꾸면 요청이 여러 개 동시에
+   * 나갈 수 있는데, "나중에 보낸 요청이 항상 나중에 도착한다"는 보장이 없다
+   * (네트워크 지연은 요청 순서와 무관하다). runRank()가 응답을 받을 때마다
+   * 이 번호와 비교해 "아직 최신 요청인가"를 확인하고, 그 사이 더 최신 요청이
+   * 나갔으면 응답을 버린다 — 안 그러면 사용자가 방금 고른 조건이 아니라 그
+   * 전 조건의 결과가 화면에 남을 수 있다. */
+  const rankRequestId = useRef(0);
 
   const say = useCallback((from: Message["from"], parts: RichParts) => {
     setMessages((prev) => [...prev, { id: messageId.current++, from, parts }]);
@@ -162,9 +169,13 @@ export default function App() {
     (next: Conditions, onDone?: (res: RankResponse) => void, record = false) => {
       if (!next.biz) return;
 
+      const requestId = ++rankRequestId.current;
+      const isStale = () => requestId !== rankRequestId.current;
+
       setLoading(true);
       fetchRank(next, TOP_K)
         .then((res) => {
+          if (isStale()) return; // 그 사이 더 최신 요청이 나갔다 — 이 응답은 버린다
           setMeta(res);
           setError(null);
           if (record && userId) {
@@ -182,8 +193,14 @@ export default function App() {
           }
           onDone?.(res);
         })
-        .catch(handleError)
-        .finally(() => setLoading(false));
+        .catch((e: unknown) => {
+          if (isStale()) return;
+          handleError(e);
+        })
+        .finally(() => {
+          if (isStale()) return;
+          setLoading(false);
+        });
     },
     [handleError, userId],
   );
