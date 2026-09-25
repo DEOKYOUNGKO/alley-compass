@@ -46,6 +46,20 @@ Priority = Literal["survival", "cost", "growth"]
 
 _BASE_WEIGHTS = {"demand": 0.30, "comp": 0.24, "perf": 0.16, "access": 0.12, "stability": 0.18}
 
+# 표본 신뢰도 보정(베이지안 축소) 강도. 점포 store_count개인 상권의 점수를
+# "store_count : STORE_COUNT_CONFIDENCE_K" 비율로 원점수와 이 업종 전체
+# 중앙값 사이를 섞는다 — store_count가 작을수록 중앙값 쪽으로 더 끌려간다.
+# 점포 1개면 5:1이라 대부분 중앙값 쪽, 점포 20개면 20:5=4:1이라 원점수를
+# 거의 그대로 믿는 식이다. rank_districts() 참고.
+#
+# 하드컷(예: "점포 3개 미만이면 통째로 배제") 대신 이 방식을 쓰는 이유:
+# 점포 1개짜리 상권이 폐업률로도(LightGBM), "수요÷점포수" 나눗셈으로도
+# (휴리스틱 경쟁강도 축) "매우 안정적"으로 나오는 걸 실측으로 확인했는데,
+# 이건 LightGBM만의 문제가 아니라 휴리스틱 자체의 구조적 약점이기도 했다
+# — 어느 쪽으로 계산했든 마지막에 표본 크기로 한 번 더 보정해야 두 경로
+# 모두에서 막힌다.
+STORE_COUNT_CONFIDENCE_K = 5
+
 _MODELS_DIR = Path(__file__).resolve().parent / "models"
 _LGBM_CACHE: dict | None = None
 _LGBM_LOAD_ATTEMPTED = False
@@ -208,7 +222,8 @@ def rank_districts(
     total_w = sum(w_avail.values())
     w_avail = {k: v / total_w for k, v in w_avail.items()}
 
-    stability_score = sum(w_avail[k] * available[k] for k in available).round(1)
+    heuristic_stability = sum(w_avail[k] * available[k] for k in available).round(1)
+    stability_score = heuristic_stability
 
     # LightGBM이 승격돼 있으면 그 예측으로 헤드라인 점수를 바꿔치기한다.
     # breakdown(위 components)은 그대로 휴리스틱 축으로 남겨서 "어떤 요인이
@@ -218,6 +233,21 @@ def rank_districts(
     lgbm_score, model_version = _lightgbm_stability(scope)
     if lgbm_score is not None:
         stability_score = lgbm_score
+
+    # 표본 신뢰도 보정 — 어느 쪽으로 계산했든(LightGBM이든 휴리스틱 폴백이든)
+    # 마지막에 한 번 더 건다. 점포가 1~2개뿐인 상권은 "폐업률이 학습 시점
+    # 기준으로도 거의 항상 0%"라 LightGBM이 안정적으로 오인하고, 휴리스틱도
+    # "수요÷점포수"라 점포수가 작을수록 값이 커져서 마찬가지로 부풀려지는 걸
+    # 실측으로 확인했다(점포 1개짜리 상권이 강남역보다 안전하다고 나온 사례,
+    # 그리고 이 필터를 store_count<3에만 걸었을 때도 store_count 1~2인
+    # 상권이 상위 15위 안에 계속 남아있던 것도 확인함). 두 계산 경로 모두
+    # 표본 크기를 반영하지 못하므로, 결과값에 한 번 더 "점포 수가 적을수록
+    # 이 업종 전체 중앙값 쪽으로 끌어당기는" 베이지안 축소를 적용한다 —
+    # 하드컷보다 부드럽고, 두 경로 모두에서 동시에 막힌다.
+    prior = float(stability_score.median())
+    store_count = scope["store_count"].fillna(0)
+    confidence = store_count / (store_count + STORE_COUNT_CONFIDENCE_K)
+    stability_score = (confidence * stability_score + (1 - confidence) * prior).round(1)
 
     out = scope[["district_code", "district_name"]].copy()
 
