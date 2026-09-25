@@ -46,19 +46,21 @@ Priority = Literal["survival", "cost", "growth"]
 
 _BASE_WEIGHTS = {"demand": 0.30, "comp": 0.24, "perf": 0.16, "access": 0.12, "stability": 0.18}
 
-# 표본 신뢰도 보정(베이지안 축소) 강도. 점포 store_count개인 상권의 점수를
-# "store_count : STORE_COUNT_CONFIDENCE_K" 비율로 원점수와 이 업종 전체
-# 중앙값 사이를 섞는다 — store_count가 작을수록 중앙값 쪽으로 더 끌려간다.
-# 점포 1개면 5:1이라 대부분 중앙값 쪽, 점포 20개면 20:5=4:1이라 원점수를
-# 거의 그대로 믿는 식이다. rank_districts() 참고.
-#
-# 하드컷(예: "점포 3개 미만이면 통째로 배제") 대신 이 방식을 쓰는 이유:
-# 점포 1개짜리 상권이 폐업률로도(LightGBM), "수요÷점포수" 나눗셈으로도
-# (휴리스틱 경쟁강도 축) "매우 안정적"으로 나오는 걸 실측으로 확인했는데,
-# 이건 LightGBM만의 문제가 아니라 휴리스틱 자체의 구조적 약점이기도 했다
-# — 어느 쪽으로 계산했든 마지막에 표본 크기로 한 번 더 보정해야 두 경로
-# 모두에서 막힌다.
-STORE_COUNT_CONFIDENCE_K = 5
+# 표본 신뢰도 보정(베이지안 축소) 강도 — 업종 전체 점포수 중앙값에 비례.
+# 처음엔 고정값(K=5)을 썼는데, 업종마다 점포수 규모 자체가 너무 달라서
+# (커피-음료 중앙값 7개 vs 양식음식점 중앙값 3개) 하나의 고정값으론 안
+# 맞았다: 커피-음료엔 과해서 원래 있던 점수 다양성이 거의 사라졌고
+# (표준편차 21→8), 그런데도 양식음식점의 점포 1~2개짜리 상권은 여전히
+# 상위권을 차지했다(K=5로도 못 막음). "이 업종 안에서 점포수가 어느
+# 정도면 충분한 표본인가"가 업종마다 다르다는 뜻이라, 그 업종 자체의
+# 중앙값에 비례한 강도를 쓴다 — STORE_COUNT_CONFIDENCE_K_FRAC * 중앙값.
+STORE_COUNT_CONFIDENCE_K_FRAC = 1.0
+
+# 그래도 점포 0~1개는 위 비례식만으론 안 막힐 수 있어(업종이 워낙 희소하면
+# 중앙값 자체가 작아서 비례식의 K도 작아짐) 이 구간은 원점수를 아예 안 믿고
+# 100% 업종 중앙값으로 대체한다 — "표본이 거의 없다"는 뜻이라 통계적 보정이
+# 아니라 상식적인 하한선이다.
+MIN_STORE_COUNT_ANY_TRUST = 2
 
 _MODELS_DIR = Path(__file__).resolve().parent / "models"
 _LGBM_CACHE: dict | None = None
@@ -238,15 +240,22 @@ def rank_districts(
     # 마지막에 한 번 더 건다. 점포가 1~2개뿐인 상권은 "폐업률이 학습 시점
     # 기준으로도 거의 항상 0%"라 LightGBM이 안정적으로 오인하고, 휴리스틱도
     # "수요÷점포수"라 점포수가 작을수록 값이 커져서 마찬가지로 부풀려지는 걸
-    # 실측으로 확인했다(점포 1개짜리 상권이 강남역보다 안전하다고 나온 사례,
-    # 그리고 이 필터를 store_count<3에만 걸었을 때도 store_count 1~2인
-    # 상권이 상위 15위 안에 계속 남아있던 것도 확인함). 두 계산 경로 모두
-    # 표본 크기를 반영하지 못하므로, 결과값에 한 번 더 "점포 수가 적을수록
-    # 이 업종 전체 중앙값 쪽으로 끌어당기는" 베이지안 축소를 적용한다 —
-    # 하드컷보다 부드럽고, 두 경로 모두에서 동시에 막힌다.
+    # 실측으로 확인했다(점포 1개짜리 상권이 강남역보다 안전하다고 나온 사례).
+    # 두 계산 경로 모두 표본 크기를 반영하지 못하므로, 결과값에 한 번 더
+    # 베이지안 축소를 적용한다.
+    #
+    # 강도는 이 업종의 점포수 중앙값에 비례시킨다 — 고정값(K=5)을 썼을 때는
+    # 업종마다 점포수 규모가 완전히 달라 하나로 안 맞았다(커피-음료 중앙값
+    # 7개엔 과해서 원래 있던 점수 다양성이 거의 사라졌고, 양식음식점 중앙값
+    # 3개엔 부족해서 점포 1~2개짜리 상권이 여전히 상위권에 남았다 — 실측으로
+    # 확인함). store_count가 이 하한(MIN_STORE_COUNT_ANY_TRUST) 미만이면
+    # 비례식과 무관하게 원점수를 아예 안 믿는다 — 표본이 거의 없다는 뜻이라
+    # 통계 보정이 아니라 상식적인 하한선이다.
     prior = float(stability_score.median())
     store_count = scope["store_count"].fillna(0)
-    confidence = store_count / (store_count + STORE_COUNT_CONFIDENCE_K)
+    k_rel = max(store_count.median(), 1.0) * STORE_COUNT_CONFIDENCE_K_FRAC
+    confidence = (store_count / (store_count + k_rel)).clip(upper=1.0)
+    confidence = confidence.where(store_count >= MIN_STORE_COUNT_ANY_TRUST, 0.0)
     stability_score = (confidence * stability_score + (1 - confidence) * prior).round(1)
 
     out = scope[["district_code", "district_name"]].copy()
@@ -262,8 +271,34 @@ def rank_districts(
 
     out["stability_score"] = stability_score
     out["target_fit_score"] = demand.round(1)
-    # 예산 데이터가 없어 final_score = stability_score (§16 Budget Fit 항은 현재 미반영)
-    out["final_score"] = out["stability_score"]
+
+    # final_score = stability_score(생존 안정성) + target_fit_score(상권성격·
+    # 연령대로 고른 타겟 고객층 적합도)의 가중합(PRD §16). 예산(Budget Fit)은
+    # 여전히 보증금/임대료 데이터가 없어 반영하지 않는다.
+    #
+    # 이전엔 final_score = stability_score였다 — LightGBM이 승격된 뒤로는
+    # stability_score가 모델 예측값 단독이라 사용자가 상권성격을 바꿔도 순위가
+    # 안 바뀌는 문제가 있었다(target_fit_score는 화면 표시용 숫자로만 쓰이고
+    # 정렬엔 안 들어갔음). 기본 가중치 0.30(target_fit)은 LightGBM 이전
+    # 휴리스틱 구성의 demand 축 가중치(_BASE_WEIGHTS["demand"])와 같은 값을
+    # 그대로 가져왔다 — 원래 의도했던 상대적 비중을 유지하기 위해서다.
+    final_weights = {"stability": 0.70, "target_fit": 0.30}
+    if priority == "survival":
+        final_weights["stability"] *= 1.3
+    elif priority == "growth":
+        # growth 우선순위는 매출 성장률(perf) 축을 더 보고 싶다는 뜻이지만
+        # perf는 final_score 구성 요소가 아니다(breakdown 표시 전용). 대신
+        # "지금 당장의 매출 실적"보다 "내 타겟 고객층이 이 상권에 얼마나
+        # 맞는가"가 성장 가능성에 더 가까운 신호라고 보고 target_fit 비중을
+        # 높인다.
+        final_weights["target_fit"] *= 1.3
+    total_final_w = sum(final_weights.values())
+    final_weights = {k: v / total_final_w for k, v in final_weights.items()}
+
+    out["final_score"] = (
+        final_weights["stability"] * out["stability_score"]
+        + final_weights["target_fit"] * out["target_fit_score"]
+    ).round(1)
 
     n = len(scope)
     breakdown_cols = {
