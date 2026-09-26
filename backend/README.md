@@ -35,7 +35,23 @@ BACKEND_USE_SUPABASE=true
 를 추가한다 (단, `db/schema_v1.1.sql`의 v1.2 패치 — `service_role` GRANT —
 가 먼저 Supabase에 적용돼 있어야 한다).
 
-http://localhost:8000/docs 에서 Swagger UI로 바로 테스트 가능.
+http://localhost:8000/docs 에서 Swagger UI로 바로 테스트 가능(로그인 토큰 필요).
+
+### 환경변수
+
+전부 `alley_compass_etl/.env`에 둔다. 설명은 `.env.example`에 주석으로 있다.
+
+| 변수 | 용도 |
+|---|---|
+| `SUPABASE_URL` · `SUPABASE_SECRET_KEY` | DB 조회 · 로그인 토큰 검증 (서버 전용 키) |
+| `SUPABASE_JWT_SECRET` | 구형(HS256) 프로젝트만 |
+| `ANTHROPIC_API_KEY` | `/parse-condition` · `/agents` · `/report` |
+| `BACKEND_USE_SUPABASE` | `true`면 Supabase, 기본은 로컬 CSV |
+| `CORS_ORIGINS` | 허용할 웹 주소(쉼표 구분). 기본 `http://localhost:5173` |
+| `PARSE_CREDIT_LIMIT_PER_HOUR` · `AGENT_CREDIT_LIMIT_PER_HOUR` | Claude 호출 한도 (기본 60 · 40) |
+| `FRAME_CACHE_TTL_SECONDS` | 상권 데이터 캐시 갱신 주기 (기본 21600 = 6시간) |
+
+운영자가 계정을 직접 만들 때는 `backend/`에서 `python scripts/create_user.py <이메일>`.
 
 ## 배포 (Render)
 
@@ -124,6 +140,13 @@ curl -X POST http://localhost:8000/report \
   -d '{"business_code":"CS100010","budget":5000,"top_k":3}' \
   -o report.pdf
 ```
+
+### macOS에서 LightGBM이 안 불러와질 때
+
+`OSError: ... libomp.dylib ... (no such file)`이 나거나 `/health`의 `model_version`이
+`heuristic-v0`면 OpenMP 런타임이 없는 것이다. `brew install libomp` 후 서버를 재시작한다.
+모델 로드 실패는 예외로 죽지 않고 휴리스틱으로 대체되므로 서버 로그(`[경고] LightGBM 모델
+로드 실패`)에서만 드러난다.
 
 ### macOS에서 PDF가 안 만들어질 때 (WeasyPrint)
 

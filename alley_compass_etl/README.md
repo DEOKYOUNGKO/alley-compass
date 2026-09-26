@@ -1,12 +1,22 @@
 # 골목 컴퍼스 ETL
 
+서울시 공개 데이터(API 6종)를 내려받아 **상권 × 업종 × 분기** 표 하나로 합치고 Supabase에
+올리는 파이프라인이다. 이 폴더에는 그 표를 바탕으로 동작하는 **검증 Tool**(§8)과
+**Claude 근거 생성 에이전트**(§9), 자연어 조건 파서(`condition_parser.py`)도 함께 있다.
+처음이면 §1~§3만 따라 해도 데이터가 채워진다.
+
 ## 1. 설치
 
+가상환경은 저장소 루트의 `.venv` 하나를 백엔드와 같이 쓴다(루트 `README.md`의 "빠른 시작").
+아래 명령은 전부 `alley_compass_etl/`에서 실행한다.
+
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
+# 저장소 루트에서 처음 한 번
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r backend/requirements.txt -r alley_compass_etl/requirements.txt
+cp alley_compass_etl/.env.example alley_compass_etl/.env
+
+cd alley_compass_etl
 ```
 
 `.env`에 다음 3개를 입력합니다.
