@@ -22,8 +22,9 @@ cp ../alley_compass_etl/.env.example ../alley_compass_etl/.env   # 처음 한 �
 uvicorn main:app --reload --port 8000
 ```
 
-다음부터 백엔드만 다시 띄울 때는 가상환경 활성화 후 `cd backend && uvicorn main:app
---reload --port 8000`이면 된다.
+다음부터 백엔드만 다시 띄울 때는 저장소 루트에서 `source .venv/bin/activate`로 가상환경을
+켠 뒤 `cd backend && uvicorn main:app --reload --port 8000`이면 된다. 새 터미널을 열면
+가상환경이 꺼져 있으니 매번 켠다 — 안 켜면 `command not found: uvicorn`이 나온다.
 
 기본은 로컬 CSV(`alley_compass_etl/data/processed/district_features_debug.csv`)를
 읽는다. Supabase로 전환하려면 `alley_compass_etl/.env`에

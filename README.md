@@ -69,12 +69,17 @@ npm --prefix web install
 ### 1. 화면 띄우기
 
 ```bash
-# 터미널 1 — 백엔드 (http://localhost:8000/docs)
+# 터미널 1 — 백엔드 (http://localhost:8000/docs), 저장소 루트에서 시작
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
 cd backend && uvicorn main:app --reload --port 8000
 
-# 터미널 2 — 웹 (http://localhost:5173)
+# 터미널 2 — 웹 (http://localhost:5173), 저장소 루트에서 시작
 npm --prefix web run dev
 ```
+
+⚠️ **새 터미널을 열 때마다 `source .venv/bin/activate`를 먼저 한다.** 프롬프트 앞에 `(.venv)`가
+보이면 켜진 것이다. 안 켜면 `zsh: command not found: uvicorn`이 나온다 — 설치가 안 된 게 아니라
+가상환경이 꺼져 있는 것이다. (웹 터미널은 Python이 필요 없어 활성화하지 않아도 된다.)
 
 백엔드는 기본으로 로컬 CSV를 읽는다. Supabase 데이터를 쓰려면
 `alley_compass_etl/.env`에 `BACKEND_USE_SUPABASE=true`를 추가한다. 로그인이 필수라

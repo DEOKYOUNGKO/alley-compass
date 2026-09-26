@@ -3,7 +3,7 @@
 `backend/` FastAPI 를 호출해 상권 랭킹·진단·근거를 보여주는 화면이다.
 
 ```bash
-# 1) 백엔드 먼저 (다른 터미널, 저장소 루트의 가상환경을 켠 뒤)
+# 1) 백엔드 먼저 (다른 터미널). 저장소 루트에서 `source .venv/bin/activate`로 가상환경을 켠 뒤
 cd ../backend && uvicorn main:app --reload --port 8000
 
 # 2) 웹 — web/ 에서
