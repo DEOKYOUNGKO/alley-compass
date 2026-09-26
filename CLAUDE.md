@@ -74,7 +74,7 @@ python verification_tools.py --supabase       # 로컬 CSV 대신 Supabase에서
 python district_geo.py --upload               # 상권 좌표·구·면적 (지도용, v1.4 패치 선행)
 ```
 
-백엔드(`cd backend && uvicorn main:app --reload --port 8000`)와 모델 학습
+백엔드(가상환경 활성화 후 `cd backend && uvicorn main:app --reload --port 8000`)와 모델 학습
 (`cd ml && python train.py …`)은 `backend/README.md`, `ml/README.md`를 본다.
 macOS에서 LightGBM을 로드하려면 `brew install libomp`가 필요하다 — 없으면 휴리스틱으로
 **조용히** 폴백하므로 `/health`의 `model_version`으로 확인한다.
