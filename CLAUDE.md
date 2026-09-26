@@ -154,8 +154,11 @@ Claude를 부르지 않으므로 과금이 없다. 백분위는 `verification_to
 사용자별 1시간 크레딧 한도를 건다. 로그인만으로는 반복 호출을 못 막아서인데,
 메모리 기반이라 인스턴스 하나에서만 유효하다(수평 확장 시 Redis 등으로 교체 필요).
 
-`backend/main.py`의 `get_frame()`은 `district_features`를 프로세스 메모리에 캐시하고
-`FRAME_CACHE_TTL_SECONDS`(기본 6시간)마다 자동으로 다시 읽는다. ETL로 새 분기를
+`backend/main.py`의 `get_business_frame(업종코드)`는 그 업종의 최근 분기 행만 Supabase에서 읽어
+프로세스 메모리에 캐시한다(처음 그 업종을 고를 때 한 번). 랭킹·백분위·경쟁강도 비교는 전부 같은
+업종 안에서만 하므로 다른 업종 행이 필요 없다 — 새 계산을 추가할 때도 이 전제를 깨지 않는다
+(다른 업종 행이 필요해지면 캐시 구조부터 다시 본다). `FRAME_CACHE_TTL_SECONDS`(기본 6시간)마다
+그 업종만 자동으로 다시 읽고, 실패하면 기존 캐시로 계속 서비스한다. ETL로 새 분기를
 Supabase에 올려도 이 시간 전엔 화면에 안 보인다 — 즉시 반영하려면 서버를 재시작한다.
 
 `web/` — React + TypeScript 프론트. 상세는 `web/README.md`. 요점만:
