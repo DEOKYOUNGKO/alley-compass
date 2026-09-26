@@ -130,7 +130,7 @@ python district_geo.py --upload   # 상권 좌표·구·면적 (지도용) — �
 | 자연어 조건 입력 | ✅ 문장을 조건으로 바꿔 준다(이전 대화 조건 이어받음) | `POST /parse-condition` |
 | LightGBM 모델 | ✅ 22.5만 행(10개 업종 × 18개 분기)으로 학습·배포 | [`ml/`](ml/), [`backend/models/`](backend/models/) |
 | FastAPI 백엔드 | ✅ 랭킹·조건 파싱·상세 진단·근거 생성·PDF 리포트. `/health` 외 로그인 필요 | [`backend/`](backend/) |
-| 백엔드 배포 | ✅ Render(Docker) 무료 플랜. 메모리 한도 때문에 최신 분기만 올려 둔다 | [`Dockerfile`](Dockerfile), [배포 안내](backend/README.md#배포-render) |
+| 백엔드 배포 | ✅ Render(Docker) 무료 플랜. 메모리 한도 때문에 최신 분기만, 그것도 고른 업종만 올려 둔다 | [`Dockerfile`](Dockerfile), [배포 안내](backend/README.md#배포-render) |
 | 웹 프론트 | ✅ 로그인 필수(이메일·Google·카카오), 추천·물어보기·리포트·기록 탭, 카카오맵 | [`web/`](web/) |
 | 보증금·임대료 | ❌ 없음 — 한국부동산원 R-ONE 자료는 전국 368개 대표 상권 단위라 서울 골목상권과 안 맞아 넣지 않았다 | 설계 원칙 2 |
 
