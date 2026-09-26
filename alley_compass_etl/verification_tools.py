@@ -230,7 +230,7 @@ def _load_business_from_supabase(business_code: str) -> pd.DataFrame:
     필터를 건 단순 조회로 2번이면 끝난다(실측 1.7초).
 
     기준 분기는 업종별 최근 분기가 아니라 **테이블 전체의 최근 분기**다 —
-    예전 get_frame()과 같은 기준이라야 업종끼리 기준 시점이 어긋나지 않고
+    예전 전체 적재(latest_only=True)와 같은 기준이라야 업종끼리 기준 시점이 어긋나지 않고
     결과도 그대로 유지된다. 업종이 없거나 그 분기에 행이 없으면 빈
     DataFrame을 돌려준다(404 여부는 호출자가 판단한다).
     """
@@ -319,7 +319,7 @@ def load_district_history(
 ) -> pd.DataFrame:
     """한 상권×업종의 전체 분기 이력만 가져온다. /detail의 추이 차트 전용.
 
-    get_frame()의 캐시(latest_only=True)에는 과거 분기가 없으므로, 상세
+    backend의 업종별 캐시(load_business_frame)에는 과거 분기가 없으므로, 상세
     화면을 열 때마다 이 함수로 그 상권×업종 하나만 작게(현재 최대 18행)
     따로 조회한다 — 전체 테이블을 메모리에 올리지 않고도 추이를 보여줄
     수 있다.
