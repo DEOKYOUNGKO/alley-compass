@@ -32,7 +32,7 @@ SHAP 설명력, 임차료 데이터 편입 여부 같은 다듬는 작업이다.
 | 웹 프론트 | ✅ `backend/`에 연결됨 · 로그인 필수(Supabase Auth: 이메일 · Google · 카카오) · React 19 + TypeScript + Tailwind 4, 자체 디자인 시스템 | [`web/`](web/) |
 | FastAPI 백엔드 | ✅ 동작 (`/rank`, `/parse-condition`, `/districts/{code}/detail`, `/agents`, `/report`), `/health` 외 전부 로그인 필요, **랭킹 점수는 LightGBM**(모델 없으면 휴리스틱 폴백) | [`backend/`](backend/) |
 | 백엔드 배포 (Render, Docker) | ✅ 동작 — 무료 플랜, 최신 분기만 메모리에 올려 OOM 회피 | [`Dockerfile`](Dockerfile), [`backend/README.md`](backend/README.md#배포-render) |
-| PDF 리포트 (F-15) | ✅ 동작 (WeasyPrint) — Top-K 상권 + 실제 Claude 근거를 PDF 한 장으로. 웹 화면 연결 전 | `POST /report` |
+| PDF 리포트 (F-15) | ✅ 동작 (WeasyPrint) — Top-K 상권 + 실제 Claude 근거를 PDF 한 장으로 — 웹 리포트 탭에서 내려받는다 | `POST /report` |
 | LightGBM 예측 모델 | ✅ 실 데이터로 학습·배포 완료 — 22.5만 행(10개 업종 × 18개 분기) | [`ml/`](ml/), [`backend/models/`](backend/models/) |
 | 보증금/임대료 | ❌ 미보유 — 한국부동산원 R-ONE에 실데이터가 있으나 전국 368개 "대표 상권" 단위라 서울시 1,638개 골목상권과 정밀도가 안 맞아 편입 보류(§설계 원칙 2) | — |
 
@@ -70,12 +70,13 @@ SHAP 설명력, 임차료 데이터 편입 여부 같은 다듬는 작업이다.
 alley-compass/
 ├── README.md               이 파일
 ├── CLAUDE.md               Claude Code용 작업 가이드
+├── Dockerfile · render.yaml   백엔드 배포(Render, Docker)
 ├── docs/
 │   ├── PRD.md              제품 요구사항 정의서 v1.1 — 사양의 기준 문서
 │   └── prototype-v0.html   React 이식 전 원본 프로토타입 (디자인 레퍼런스)
 ├── db/
 │   └── schema_v1.1.sql     Supabase/PostgreSQL 스키마 (테이블 11개 + RLS)
-│                             끝에 v1.2(service_role) · v1.3(로그인) 패치 섹션
+│                             끝에 v1.2(service_role) · v1.3(로그인) · v1.4(상권 면적) 패치 섹션
 ├── alley_compass_etl/      서울시 Open API → 전처리 → Supabase 적재 → Agent
 │   ├── alley_compass_etl.py    ETL 파이프라인
 │   ├── district_geo.py          상권 좌표/구/면적 보강 (지도 표시용, "영역-상권" API)
@@ -86,10 +87,11 @@ alley-compass/
 │   ├── pipeline.py               위 전체를 잇는 CLI (--dry-run 지원)
 │   └── README.md               ETL·Agent 사용법 · 의도적 NULL 설명
 ├── backend/                FastAPI — 위 모듈들을 엔드포인트로 노출
-│   ├── main.py                  /rank, /parse-condition, /districts/{code}/detail, /agents
+│   ├── main.py                  /rank, /parse-condition, /districts/{code}/detail, /agents, /report
 │   ├── auth.py                   Supabase 로그인 토큰(JWT) 검증
 │   ├── scoring.py                랭킹 로직 — LightGBM 승격돼 있으면 우선 사용, 없으면 휴리스틱 폴백
 │   ├── detail.py                 상권 진단 4영역 + 시계열 집계
+│   ├── report.py                 PDF 리포트 (WeasyPrint)
 │   ├── ratelimit.py              Claude 호출 엔드포인트 사용자별 시간당 크레딧 한도
 │   ├── models/                   승격된 LightGBM 아티팩트(*.joblib) — 커밋 대상
 │   ├── schemas.py                요청·응답 모델 (web/src/types/api.ts 와 1:1)
@@ -122,39 +124,68 @@ alley-compass/
 
 ## 빠른 시작
 
-### 웹 화면 보기 (백엔드가 필요하다)
+### 0. 준비 (한 번만)
+
+Python 3.11+ 와 Node.js(npm)가 필요하다. 가상환경은 **저장소 루트에 하나만** 만들어
+백엔드·ETL·ML이 같이 쓴다.
 
 ```bash
-# 1) 백엔드 — 수집된 데이터가 있어야 한다
+python3 -m venv .venv
+source .venv/bin/activate          # Windows: .venv\Scripts\activate
+pip install -r backend/requirements.txt -r alley_compass_etl/requirements.txt
+#  ↳ 모델 학습(ml/)까지 하려면 -r ml/requirements.txt 도 추가
+
+cp alley_compass_etl/.env.example alley_compass_etl/.env   # 서버 전용 값 채우기
+cp web/.env.example web/.env.local                          # 공개 값만 채우기
+npm --prefix web install
+```
+
+**macOS**는 LightGBM용 OpenMP 런타임이 따로 필요하다: `brew install libomp`. 없으면 모델을
+못 불러와 `/rank`가 휴리스틱으로 **조용히** 대체된다(`GET /health`의 `model_version`이
+`heuristic-v0`). PDF 리포트는 `brew install pango`도 필요하다(`backend/README.md`).
+
+각 `.env.example`에 어떤 값이 왜 필요한지 주석으로 적혀 있다.
+
+### 1. 화면 띄우기
+
+```bash
+# 터미널 1 — 백엔드 (http://localhost:8000/docs)
 cd backend && uvicorn main:app --reload --port 8000
 
-# 2) 웹
-cd web && npm install && npm run dev   # http://localhost:5173
+# 터미널 2 — 웹 (http://localhost:5173)
+npm --prefix web run dev
 ```
+
+백엔드는 기본으로 로컬 CSV를 읽는다. Supabase 데이터를 쓰려면
+`alley_compass_etl/.env`에 `BACKEND_USE_SUPABASE=true`를 추가한다. 로그인이 필수라
+Supabase Auth 설정([`web/README.md`](web/README.md)의 "로그인")이 먼저 필요하다.
 
 조건을 바꾸면 서버가 서울 전체를 다시 랭킹하고, 상권 행을 누르면 진단 4영역과
 시계열이 담긴 상세 패널이 열린다. 추천·반대 근거는 Claude 호출이라 버튼을
 눌러야 생성된다(15~20초, 과금).
 
-### 데이터 파이프라인 돌리기 (API 키 필요)
+### 2. 데이터 채우기 (필요할 때만)
 
 준비물: ① [서울 열린데이터광장](https://data.seoul.go.kr) 인증키 ② Supabase 프로젝트에
 `db/schema_v1.1.sql` 적용
 
 ```bash
 cd alley_compass_etl
-python -m venv .venv && .venv/Scripts/activate   # Windows
-pip install -r requirements.txt
-cp .env.example .env                              # 키 3개 입력
-
 # 먼저 1분기 × 1업종으로, 업로드 없이 시험
 python alley_compass_etl.py --start-quarter 20251 --end-quarter 20251 \
   --business-name "커피-음료" --no-upload
 
-python verification_tools.py                      # 검증 Tool 데모
+python verification_tools.py      # 검증 Tool 데모
+python district_geo.py --upload   # 상권 좌표·구·면적 (지도용) — 새 업종을 적재했다면 다시 실행
 ```
 
-자세한 옵션은 [`alley_compass_etl/README.md`](alley_compass_etl/README.md).
+옵션 전체는 [`alley_compass_etl/README.md`](alley_compass_etl/README.md), 모델 학습·승격은
+[`ml/README.md`](ml/README.md), 배포(Render)는 [`backend/README.md`](backend/README.md).
+
+### 3. 확인
+
+테스트 프레임워크·린터는 아직 없다. `npm --prefix web run build`(타입 검사 포함),
+`cd backend && python -c "import main"`, ETL의 DATA QUALITY REPORT로 확인한다.
 
 ---
 

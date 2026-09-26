@@ -2,11 +2,16 @@
 
 ## 1. 설치
 
+가상환경은 저장소 루트의 `.venv` 하나를 백엔드와 같이 쓴다(루트 `README.md`의 "빠른 시작").
+아래 명령은 전부 `alley_compass_etl/`에서 실행한다.
+
 ```bash
-python3 -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-cp .env.example .env
+# 저장소 루트에서 처음 한 번
+python3 -m venv .venv && source .venv/bin/activate
+pip install -r backend/requirements.txt -r alley_compass_etl/requirements.txt
+cp alley_compass_etl/.env.example alley_compass_etl/.env
+
+cd alley_compass_etl
 ```
 
 `.env`에 다음 3개를 입력합니다.
