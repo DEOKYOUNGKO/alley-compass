@@ -163,6 +163,9 @@ alley-compass/
 ├── db/
 │   └── schema_v1.1.sql     Supabase/PostgreSQL 스키마 (테이블 11개 + RLS)
 │                             끝에 v1.2(service_role) · v1.3(로그인) · v1.4(상권 면적) 패치 섹션
+├── DB_EDA/                 Supabase 실데이터 검산 (전처리가 의도대로 됐는지 확인)
+│   ├── eda.py                    결측치·분포·상관관계 리포트 + 차트 생성
+│   └── README.md                 산출물 설명 · 확인된 결과 스냅샷
 ├── alley_compass_etl/      서울시 Open API → 전처리 → Supabase 적재 → Agent
 │   ├── alley_compass_etl.py    ETL 파이프라인
 │   ├── district_geo.py          상권 좌표/구/면적 보강 (지도 표시용, "영역-상권" API)
